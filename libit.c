@@ -1,6 +1,5 @@
 #define _DEFAULT_SOURCE
-#define _XOPEN_SOURCE
-#include "../include/it.h"
+#include "./include/it.h"
 
 #include <err.h>
 #include <errno.h>
