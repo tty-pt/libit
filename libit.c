@@ -1,4 +1,7 @@
 #define _DEFAULT_SOURCE
+#ifndef __OpenBSD__
+#define _XOPEN_SOURCE
+#endif
 #include "./include/it.h"
 
 #include <err.h>
