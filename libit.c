@@ -501,7 +501,7 @@ splits_get(struct split_tailq *splits, struct tidbs *dbs, time_t min, time_t max
 	matches_fix(&matches, min, max);
 	splits_init(who_hd, splits, &matches, matches_l);
 	matches_free(&matches);
-	hash_close(who_hd);
+	hash_close(who_hd, 0);
 }
 
 /* Inserts a tail queue of splits within another, before the element provided

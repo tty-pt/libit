@@ -1,0 +1,22 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@tty-pt/qhash':
+        specifier: ^0.5.0
+        version: 0.5.0
+
+packages:
+
+  '@tty-pt/qhash@0.5.0':
+    resolution: {integrity: sha512-URWc5uwLhwJGCmaokbrzupZGuFs60Kv4MAh9UioPXErGT2w7FUWIFL8URr53kEX9NtztoSX/kQ5jy6bb8zv3cw==}
+
+snapshots:
+
+  '@tty-pt/qhash@0.5.0': {}
