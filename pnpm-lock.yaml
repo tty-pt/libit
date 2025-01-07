@@ -7,16 +7,16 @@ settings:
 importers:
 
   .:
-    dependencies:
+    devDependencies:
       '@tty-pt/qhash':
-        specifier: ^0.5.0
-        version: 0.5.0
+        specifier: ^0.5.29
+        version: 0.5.29
 
 packages:
 
-  '@tty-pt/qhash@0.5.0':
-    resolution: {integrity: sha512-URWc5uwLhwJGCmaokbrzupZGuFs60Kv4MAh9UioPXErGT2w7FUWIFL8URr53kEX9NtztoSX/kQ5jy6bb8zv3cw==}
+  '@tty-pt/qhash@0.5.29':
+    resolution: {integrity: sha512-A2ydAz6p3oZO1khsYqaFsMDlpCpJ/0M4lkX6gHToAu5xxFQWWMPxz10cQC8hGPwyEF0oxk7GLodfen0z5VpVtQ==}
 
 snapshots:
 
-  '@tty-pt/qhash@0.5.0': {}
+  '@tty-pt/qhash@0.5.29': {}
