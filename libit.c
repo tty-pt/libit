@@ -55,7 +55,7 @@ STAILQ_HEAD(match_stailq, match);
 struct split {
 	time_t min;
 	time_t max;
-	struct idm_list idml;
+	struct idml idml;
 	unsigned count;
 	TAILQ_ENTRY(split) entry;
 };
@@ -495,7 +495,7 @@ splits_init(unsigned who_hd, struct split_tailq *splits, struct match_stailq *ma
 static void
 splits_get(struct split_tailq *splits, struct tidbs *dbs, time_t min, time_t max)
 {
-	unsigned who_hd = hash_init();
+	unsigned who_hd = hash_init(NULL);
 	struct match_stailq matches;
 	unsigned matches_l = ti_intersect(dbs, &matches, min, max);
 	matches_fix(&matches, min, max);
