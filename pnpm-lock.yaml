@@ -9,14 +9,14 @@ importers:
   .:
     devDependencies:
       '@tty-pt/qhash':
-        specifier: ^0.6.0
-        version: 0.6.0
+        specifier: ^0.6.12
+        version: 0.6.12
 
 packages:
 
-  '@tty-pt/qhash@0.6.0':
-    resolution: {integrity: sha512-WTIY+1Nrv8tmFAV6yTktOTZlI+O178PqE8uCyMQCJJbo8kkEhh45EV4/eHyPJjGyJxNRxyh50hjW1iSITxrHNw==}
+  '@tty-pt/qhash@0.6.12':
+    resolution: {integrity: sha512-qpkAMxEpT7MslTQi82T5WJlN/ehWQusEQcH7qhT9q2b/iEZrO1P5bOKkrHehnSNLQMb7d30A+oI6ipYdHkJKhQ==}
 
 snapshots:
 
-  '@tty-pt/qhash@0.6.0': {}
+  '@tty-pt/qhash@0.6.12': {}
