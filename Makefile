@@ -5,13 +5,14 @@ npm-lib := @tty-pt/qhash
 npm-root != npm root
 npm-root-dir != dirname ${npm-root}
 pwd != pwd
-libdir := /usr/local/lib ${pwd} ${npm-lib:%=${npm-root}/%} \
-	  ${npm-lib:%=${npm-root-dir}/../../%}
+libdir := ${pwd} ${npm-lib:%=${npm-root}/%} \
+	  ${npm-lib:%=${npm-root-dir}/../../%} \
+	  /usr/local/lib 
 CFLAGS += ${libdir:%=-I%/include}
 LDFLAGS	+= -lqhash -ldb ${libdir:%=-L%} ${libdir:%=-Wl,-rpath,%}
 
 libit.so: libit.c include/it.h
-	${CC} -o $@ libit.c -O3 -g -fPIC -shared -I/usr/local/include ${CFLAGS} ${LDFLAGS}
+	${CC} -o $@ libit.c -O3 -g -fPIC -shared ${CFLAGS} -I/usr/local/include ${LDFLAGS}
 
 install: libit.so
 	install -d ${DESTDIR}${PREFIX}/lib/pkgconfig
