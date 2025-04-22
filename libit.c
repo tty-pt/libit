@@ -71,7 +71,6 @@ struct tidbs {
 const time_t mtinf = (time_t) TS_MIN; // minus infinite
 const time_t tinf = (time_t) TS_MAX; // infinite
 
-static unsigned ti_n = 0;
 static int ti_first = 1;
 
 static struct idm idm;
@@ -121,7 +120,7 @@ void printtime(char buf[DATE_MAX_LEN], time_t ts) {
 
 /* create time interval BTREE keys from time interval HASH db*/
 static int
-map_tidb_timaxdb(DB *sec, const DBT *key, const DBT *data, DBT *result)
+map_tidb_timaxdb(DB *sec __attribute__((unused)), const DBT *key __attribute__((unused)), const DBT *data, DBT *result)
 {
 	memset(result, 0, sizeof(DBT));
 	result->size = sizeof(time_t);
@@ -131,7 +130,7 @@ map_tidb_timaxdb(DB *sec, const DBT *key, const DBT *data, DBT *result)
 
 /* create id BTREE keys from time interval HASH db */
 static int
-map_tidb_tiiddb(DB *sec, const DBT *key, const DBT *data, DBT *result)
+map_tidb_tiiddb(DB *sec __attribute__((unused)), const DBT *key __attribute__((unused)), const DBT *data, DBT *result)
 {
 	memset(result, 0, sizeof(DBT));
 	result->size = sizeof(unsigned);
@@ -148,7 +147,7 @@ static int
 #ifdef __APPLE__
 timax_cmp(DB *sec, const DBT *a_r, const DBT *b_r, size_t *locp)
 #else
-timax_cmp(DB *sec, const DBT *a_r, const DBT *b_r)
+timax_cmp(DB *sec __attribute__((unused)), const DBT *a_r, const DBT *b_r)
 #endif
 {
 	time_t	a = * (time_t *) a_r->data,
@@ -161,7 +160,7 @@ static int
 #ifdef __APPLE__
 tiid_cmp(DB *sec, const DBT *a_r, const DBT *b_r, size_t *locp)
 #else
-tiid_cmp(DB *sec, const DBT *a_r, const DBT *b_r)
+tiid_cmp(DB *sec __attribute__((unused)), const DBT *a_r, const DBT *b_r)
 #endif
 {
 	unsigned a = * (unsigned *) a_r->data,
@@ -223,7 +222,6 @@ ti_finish_last(struct tidbs *dbs, unsigned id, time_t end)
 {
 	struct ti ti;
 	DBT key, data;
-	DBT pkey;
 	DBC *cur;
 	int dbflags = DB_SET;
 
@@ -419,7 +417,7 @@ static inline struct split *
 split_create(unsigned who_hd, time_t min, time_t max)
 {
 	struct split *split = (struct split *) malloc(sizeof(struct split));
-	struct hash_cursor c;
+	qdb_cur_t c;
 	unsigned id, ign;
 
 	split->min = min;
@@ -427,9 +425,9 @@ split_create(unsigned who_hd, time_t min, time_t max)
 	split->idml = idml_init();
 	split->count = 0;
 
-	c = hash_iter(who_hd, NULL, 0);
+	c = qdb_iter(who_hd, NULL);
 
-	while (hash_next(&id, &ign, &c)) {
+	while (qdb_next(&id, &ign, &c)) {
 		idml_push(&split->idml, id);
 		split->count++;
 	}
@@ -445,11 +443,11 @@ splits_create(
 		struct isplit *isplits,
 		size_t matches_l)
 {
-	int i;
+	size_t i;
 
 	TAILQ_INIT(splits);
 
-	hash_drop(who_hd);
+	qdb_drop(who_hd);
 
 	for (i = 0; i < matches_l * 2 - 1; i++) {
 		struct isplit *isplit = isplits + i;
@@ -458,9 +456,9 @@ splits_create(
 		time_t n, m;
 
 		if (isplit->max)
-			uhash_del(who_hd, isplit->who);
+			qdb_del(who_hd, &isplit->who, NULL);
 		else
-			uhash_put(who_hd, isplit->who, &isplit->who, sizeof(isplit->who));
+			qdb_put(who_hd, &isplit->who, &isplit->who);
 
 		n = isplit->ts;
 		m = isplit2->ts;
@@ -479,9 +477,6 @@ static void
 splits_init(unsigned who_hd, struct split_tailq *splits, struct match_stailq *matches, unsigned matches_l)
 {
 	struct isplit *isplits;
-	struct isplit *isplit;
-	struct isplit *buf;
-	int i = 0;
 
 	isplits = isplits_create(matches, matches_l);
 	qsort(isplits, matches_l * 2, sizeof(struct isplit), isplit_cmp);
@@ -495,20 +490,20 @@ splits_init(unsigned who_hd, struct split_tailq *splits, struct match_stailq *ma
 static void
 splits_get(struct split_tailq *splits, struct tidbs *dbs, time_t min, time_t max)
 {
-	unsigned who_hd = hash_init(NULL);
+	unsigned who_hd = qdb_open(NULL, "u", "u", 0);
 	struct match_stailq matches;
 	unsigned matches_l = ti_intersect(dbs, &matches, min, max);
 	matches_fix(&matches, min, max);
 	splits_init(who_hd, splits, &matches, matches_l);
 	matches_free(&matches);
-	hash_close(who_hd, 0);
+	qdb_close(who_hd, 0);
 }
 
 /* Inserts a tail queue of splits within another, before the element provided
  */
 static inline void
 splits_concat_before(
-		struct split_tailq *target,
+		struct split_tailq *target __attribute__((unused)),
 		struct split_tailq *origin,
 		struct split *before)
 {
@@ -527,7 +522,6 @@ static inline void
 splits_fill(struct tidbs *tidbs, struct split_tailq *splits, time_t min, time_t max)
 {
 	struct split *split, *tmp;
-	struct split_tailq more_splits;
 	time_t last_max;
 
 	split = TAILQ_FIRST(splits);
@@ -582,7 +576,7 @@ splits_free(struct split_tailq *splits)
  ******/
 
 static inline int
-it_exists(unsigned itd, time_t ts, unsigned id)
+it_exists(unsigned itd, time_t ts, unsigned id __attribute__((unused)))
 {
 	struct tidbs *tidbs = &ti_dbs[itd];
 	struct ti tmp;
@@ -654,7 +648,6 @@ it_cur_t it_iter(unsigned itd, time_t start, time_t end)
 
 int it_next(time_t *min, time_t *max, unsigned *count, unsigned *who, it_cur_t *c) {
 	struct it_internal *internal = *c;
-	unsigned ignore;
 
 	if (!internal->next)
 		return 0;
