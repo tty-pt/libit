@@ -7,7 +7,7 @@
 #include <err.h>
 #include <errno.h>
 #include <limits.h>
-#include <qhash.h>
+#include <qdb.h>
 #include <stdlib.h>
 #include <string.h>
 

@@ -8,15 +8,15 @@ importers:
 
   .:
     devDependencies:
-      '@tty-pt/qhash':
-        specifier: ^0.8.4
-        version: 0.8.4
+      '@tty-pt/qdb':
+        specifier: ^0.0.2
+        version: 0.0.2
 
 packages:
 
-  '@tty-pt/qhash@0.8.4':
-    resolution: {integrity: sha512-rauKQWYjuOpl2Wa+ufTmU/ovP3mk7l+bxd0lil8miwSJ78uYhzofeeGhfm6OnBO0J+1wRnQg6JLIgMB5J4KXkQ==}
+  '@tty-pt/qdb@0.0.2':
+    resolution: {integrity: sha512-ZWGyNcb5TxvYWwKw4b+iUIrgQWT1MguoDXdPoSXlzbZB6ACR9toOK95av4dJdar9F/0+gw1BUrBwdyt4Uckasg==}
 
 snapshots:
 
-  '@tty-pt/qhash@0.8.4': {}
+  '@tty-pt/qdb@0.0.2': {}
