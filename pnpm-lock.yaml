@@ -9,14 +9,14 @@ importers:
   .:
     devDependencies:
       '@tty-pt/qdb':
-        specifier: ^0.0.2
-        version: 0.0.2
+        specifier: ^0.0.13
+        version: 0.0.13
 
 packages:
 
-  '@tty-pt/qdb@0.0.2':
-    resolution: {integrity: sha512-ZWGyNcb5TxvYWwKw4b+iUIrgQWT1MguoDXdPoSXlzbZB6ACR9toOK95av4dJdar9F/0+gw1BUrBwdyt4Uckasg==}
+  '@tty-pt/qdb@0.0.13':
+    resolution: {integrity: sha512-aDXevKOqt5PWvNrxzU+yBlW3aB2W9x7WlyPEOZnhK/FHTl5gccAygSEyUJNaRon7enj9v7YBuwbU6otKyMv8JQ==}
 
 snapshots:
 
-  '@tty-pt/qdb@0.0.2': {}
+  '@tty-pt/qdb@0.0.13': {}
