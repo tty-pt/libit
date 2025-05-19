@@ -1,6 +1,6 @@
 {
   "name": "@tty-pt/libit",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "C lib for easy interval tree usage",
   "main": "index.js",
   "scripts": {
@@ -23,9 +23,9 @@
     "README.md"
   ],
   "devDependencies": {
-    "@tty-pt/qdb": "^0.0.13"
+    "@tty-pt/qdb": "^0.0.14"
   },
   "peerDependencies": {
-    "@tty-pt/qdb": "^0.0.13"
+    "@tty-pt/qdb": "^0.0.14"
   }
 }
