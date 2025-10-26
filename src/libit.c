@@ -2,22 +2,17 @@
 #ifndef __OpenBSD__
 #define _XOPEN_SOURCE
 #endif
-#include "./include/it.h"
+#include "../include/ttypt/it.h"
 
-#include <err.h>
 #include <errno.h>
 #include <limits.h>
-#include <qdb.h>
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef __OpenBSD__
-#include <db4/db.h>
-#include <sys/queue.h>
-#else
-#include <db.h>
-#include <bsd/sys/queue.h>
-#endif
+#include <ttypt/queue.h>
+#include <ttypt/qmap.h>
+#include <ttypt/idm.h>
+#include <ttypt/qsys.h>
 
 #ifdef __OpenBSD__
 #define TS_MIN LLONG_MIN
@@ -28,6 +23,8 @@
 #endif
 
 #define TI_DBS_MAX 512
+#define SPLITS_WHO_MASK 0xFF
+#define TI_MASK 0x7FF
 
 enum cflags {
 	IT_AHEAD = 1, // first element
@@ -36,13 +33,13 @@ enum cflags {
 
 struct ti {
 	time_t min, max;
-	unsigned who;
+	uint32_t who;
 };
 
 struct isplit {
 	time_t ts;
 	int max;
-	unsigned who;
+	uint32_t who;
 };
 
 struct match {
@@ -55,7 +52,7 @@ STAILQ_HEAD(match_stailq, match);
 struct split {
 	time_t min;
 	time_t max;
-	struct idml idml;
+	ids_t ids;
 	unsigned count;
 	TAILQ_ENTRY(split) entry;
 };
@@ -63,9 +60,9 @@ struct split {
 TAILQ_HEAD(split_tailq, split);
 
 struct tidbs {
-	DB *ti; // keys and values are struct ti
-	DB *max; // secondary DB (BTREE) with interval max as key
-	DB *id; // secondary DB (BTREE) with ids as primary key
+	uint32_t ti; // keys and values are struct ti
+	uint32_t max; // secondary DB (BTREE) with interval max as key
+	uint32_t id; // secondary DB (BTREE) with ids as primary key
 } ti_dbs[TI_DBS_MAX];
 
 const time_t mtinf = (time_t) TS_MIN; // minus infinite
@@ -73,9 +70,9 @@ const time_t tinf = (time_t) TS_MAX; // infinite
 
 static int ti_first = 1;
 
-static struct idm idm;
+static idm_t idm;
 
-static DB_ENV *dbe = NULL;
+uint32_t qm_ti, qm_time;
 
 /* get timestamp from ISO-8601 date string */
 time_t sscantime(char *buf) {
@@ -87,10 +84,8 @@ time_t sscantime(char *buf) {
 	if (!aux && !strptime(buf, "%Y-%m-%d", &tm)) {
 		char *endptr;
 		unsigned long long int timestamp = strtoull(buf, &endptr, 10);
-		if (errno == 0 && *endptr == '\0' && buf != endptr)
-			return (time_t)timestamp;
-		else
-			err(EXIT_FAILURE, "Invalid date or timestamp");
+		CBUG(errno || *endptr != '\0' || buf == endptr, "Invalid date or timestamp");
+		return (time_t)timestamp;
 	}
 
 	tm.tm_isdst = -1;
@@ -119,23 +114,20 @@ void printtime(char buf[DATE_MAX_LEN], time_t ts) {
 }
 
 /* create time interval BTREE keys from time interval HASH db*/
-static int
-map_tidb_timaxdb(DB *sec __attribute__((unused)), const DBT *key __attribute__((unused)), const DBT *data, DBT *result)
+static void
+map_tidb_timaxdb(const void **skey,
+		const void *const pkey UNUSED,
+		const void * const value)
 {
-	memset(result, 0, sizeof(DBT));
-	result->size = sizeof(time_t);
-	result->data = &((struct ti *) data->data)->max;
-	return 0;
+	*skey = &((struct ti *) value)->max;
 }
-
 /* create id BTREE keys from time interval HASH db */
-static int
-map_tidb_tiiddb(DB *sec __attribute__((unused)), const DBT *key __attribute__((unused)), const DBT *data, DBT *result)
+static void
+map_tidb_tiiddb(const void **skey,
+		const void *const pkey UNUSED,
+		const void * const value)
 {
-	memset(result, 0, sizeof(DBT));
-	result->size = sizeof(unsigned);
-	result->data = &((struct ti *) data->data)->who;
-	return 0;
+	*skey = &((struct ti *) value)->who;
 }
 
 /******
@@ -144,27 +136,23 @@ map_tidb_tiiddb(DB *sec __attribute__((unused)), const DBT *key __attribute__((u
 
 /* compare two time intervals (for sorting BST items) */
 static int
-#ifdef __APPLE__
-timax_cmp(DB *sec, const DBT *a_r, const DBT *b_r, size_t *locp)
-#else
-timax_cmp(DB *sec __attribute__((unused)), const DBT *a_r, const DBT *b_r)
-#endif
+timax_cmp(const void * const a_r,
+		const void * const b_r,
+		size_t len UNUSED)
 {
-	time_t	a = * (time_t *) a_r->data,
-		b = * (time_t *) b_r->data;
+	time_t	a = * (time_t *) a_r,
+		b = * (time_t *) b_r;
 	return b > a ? -1 : (a > b ? 1 : 0);
 }
 
 /* compare two person ids (for sorting BST items) */
 static int
-#ifdef __APPLE__
-tiid_cmp(DB *sec, const DBT *a_r, const DBT *b_r, size_t *locp)
-#else
-tiid_cmp(DB *sec __attribute__((unused)), const DBT *a_r, const DBT *b_r)
-#endif
+tiid_cmp(const void * const a_r,
+		const void * const b_r,
+		size_t len UNUSED)
 {
-	unsigned a = * (unsigned *) a_r->data,
-		 b = * (unsigned *) b_r->data;
+	uint32_t a = * (uint32_t *) a_r,
+		 b = * (uint32_t *) b_r;
 	return b > a ? -1 : (a > b ? 1 : 0);
 }
 
@@ -172,24 +160,25 @@ tiid_cmp(DB *sec __attribute__((unused)), const DBT *a_r, const DBT *b_r)
  * Database initializers
  ******/
 
+__attribute__((constructor))
+static void
+libit_init(void)
+{
+	qm_ti = qmap_reg(sizeof(struct ti));
+	qm_time = qmap_reg(sizeof(time_t));
+}
+
 /* initialize ti dbs */
-static int
+static void
 tidbs_init(struct tidbs *dbs, char *fname)
 {
-	return db_create(&dbs->ti, dbe, 0)
-		|| dbs->ti->open(dbs->ti, NULL, fname, "ti", DB_HASH, DB_CREATE, 0664)
-
-		|| db_create(&dbs->max, dbe, 0)
-		|| dbs->max->set_bt_compare(dbs->max, timax_cmp)
-		|| dbs->max->set_flags(dbs->max, DB_DUP)
-		|| dbs->max->open(dbs->max, NULL, fname, "max", DB_BTREE, DB_CREATE, 0664)
-		|| dbs->ti->associate(dbs->ti, NULL, dbs->max, map_tidb_timaxdb, DB_CREATE | DB_IMMUTABLE_KEY)
-
-		|| db_create(&dbs->id, dbe, 0)
-		|| dbs->id->set_bt_compare(dbs->id, tiid_cmp)
-		|| dbs->id->set_flags(dbs->id, DB_DUP)
-		|| dbs->id->open(dbs->id, NULL, fname, "id", DB_BTREE, DB_CREATE, 0664)
-		|| dbs->ti->associate(dbs->ti, NULL, dbs->id, map_tidb_tiiddb, DB_CREATE | DB_IMMUTABLE_KEY);
+	dbs->ti = qmap_open(fname, "ti", qm_ti, qm_ti, TI_MASK, 0);
+	dbs->max = qmap_open(fname, "max", qm_time, qm_ti, TI_MASK, QM_SORTED);
+	qmap_assoc(dbs->max, dbs->ti, map_tidb_timaxdb);
+	qmap_cmp_set(dbs->max, timax_cmp);
+	dbs->id = qmap_open(fname, "id", QM_U32, qm_ti, TI_MASK, QM_SORTED);
+	qmap_assoc(dbs->ti, dbs->ti, map_tidb_tiiddb);
+	qmap_cmp_set(dbs->max, tiid_cmp);
 }
 
 /******
@@ -197,63 +186,34 @@ tidbs_init(struct tidbs *dbs, char *fname)
  ******/
  
 /* insert a time interval into an AVL */
-static int
-ti_insert(struct tidbs *dbs, unsigned id, time_t start, time_t end)
+static void
+ti_insert(struct tidbs *dbs, uint32_t id, time_t start, time_t end)
 {
 	struct ti ti = { .min = start, .max = end, .who = id };
-	DBT key, data;
-
-	memset(&key, 0, sizeof(DBT));
-	memset(&data, 0, sizeof(DBT));
-
-	key.data = &ti;
-	key.size = sizeof(ti);
-	data.data = &ti;
-	data.size = sizeof(ti);
-
-	return dbs->ti->put(dbs->ti, NULL, &key, &data, 0);
+	qmap_put(dbs->ti, &ti, &ti);
 }
 
 /* finish the last found interval at the provided timestamp for a certain
  * person id
  */
-static int
-ti_finish_last(struct tidbs *dbs, unsigned id, time_t end)
+static void
+ti_finish_last(struct tidbs *dbs, uint32_t id, time_t end)
 {
 	struct ti ti;
-	DBT key, data;
-	DBC *cur;
-	int dbflags = DB_SET;
+	const void *key, *value;
+	uint32_t c = qmap_iter(dbs->id, &id, QM_RANGE);
 
-	dbs->id->cursor(dbs->id, NULL, &cur, 0);
-
-	memset(&key, 0, sizeof(DBT));
-	memset(&data, 0, sizeof(DBT));
-
-	key.data = &id;
-	key.size = sizeof(id);
-
-	do {
-		if (cur->c_get(cur, &key, &data, dbflags)) {
-			cur->close(cur);
-			return 1;
+	while (qmap_next(&key, &value, c)) {
+		memcpy(&ti, value, sizeof(ti));
+		if (ti.max == tinf) {
+			qmap_del(dbs->id, key);
+			qmap_fin(c);
+			break;
 		}
+	}
 
-		memcpy(&ti, data.data, sizeof(ti));
-		dbflags = DB_NEXT;
-	} while (ti.max != tinf);
-
-	cur->del(cur, 0);
-	cur->close(cur);
-	memset(&key, 0, sizeof(DBT));
-	memset(&data, 0, sizeof(DBT));
-	key.data = data.data = &ti;
-	key.size = data.size = sizeof(ti);
-	/* ti.who = id; */
 	ti.max = end;
-	data.data = &ti;
-	data.size = sizeof(ti);
-	return dbs->ti->put(dbs->ti, NULL, &key, &data, 0);
+	qmap_put(dbs->ti, &ti, &ti);
 }
 
 /* intersect an interval with an AVL of intervals */
@@ -261,27 +221,14 @@ static inline unsigned
 ti_intersect(struct tidbs *dbs, struct match_stailq *matches, time_t min, time_t max)
 {
 	struct ti tmp;
-	DBC *cur;
-	DBT key, data;
-	int ret = 0, dbflags = DB_SET_RANGE;
+	const void *key, *value;
+	int ret = 0;
 
 	STAILQ_INIT(matches);
-	dbs->max->cursor(dbs->max, NULL, &cur, 0);
+	uint32_t c = qmap_iter(dbs->max, &min, QM_RANGE);
 
-	memset(&key, 0, sizeof(DBT));
-	memset(&data, 0, sizeof(DBT));
-
-	key.data = &min;
-	key.size = sizeof(time_t);
-
-	while (1) {
-		int res = cur->c_get(cur, &key, &data, dbflags);
-
-		if (res == DB_NOTFOUND)
-			break;
-
-		dbflags = DB_NEXT;
-		memcpy(&tmp, data.data, sizeof(struct ti));
+	while (qmap_next(&key, &value, c)) {
+		memcpy(&tmp, value, sizeof(struct ti));
 
 		if (tmp.max >= min && tmp.min < max) {
 			// its a match
@@ -292,36 +239,18 @@ ti_intersect(struct tidbs *dbs, struct match_stailq *matches, time_t min, time_t
 		}
 	}
 
-	cur->close(cur);
 	return ret;
 }
 
 int
-ti_present(struct tidbs *dbs, time_t when, unsigned who) {
-	int ret = 0, dbflags = DB_SET_RANGE;
+ti_present(struct tidbs *dbs, time_t when, uint32_t who) {
+	int ret = 0;
 	struct ti tmp;
-	DBC *cur;
-	DBT key, data;
+	uint32_t c = qmap_iter(dbs->max, &when, QM_RANGE);
+	const void *key, *value;
 
-	dbs->max->cursor(dbs->max, NULL, &cur, 0);
-
-	memset(&key, 0, sizeof(DBT));
-	memset(&data, 0, sizeof(DBT));
-
-	key.data = &when;
-	key.size = sizeof(time_t);
-
-	while (1) {
-		int res = cur->c_get(cur, &key, &data, dbflags);
-
-		if (res == DB_NOTFOUND)
-			break;
-
-		if (res)
-			err(1, "ti_present\n");
-
-		dbflags = DB_NEXT;
-		memcpy(&tmp, data.data, sizeof(struct ti));
+	while (qmap_next(&key, &value, c)) {
+		memcpy(&tmp, value, sizeof(struct ti));
 
 		if (tmp.who == who && tmp.max > when && tmp.min <= when) {
 			ret++;
@@ -329,7 +258,6 @@ ti_present(struct tidbs *dbs, time_t when, unsigned who) {
 		}
 	}
 
-	cur->close(cur);
 	return ret;
 }
 
@@ -390,7 +318,7 @@ static inline struct isplit *
 isplits_create(struct match_stailq *matches, size_t matches_l) {
 	struct isplit *isplits = (struct isplit *) malloc(sizeof(struct isplit) * matches_l * 2);
 	struct match *match;
-	unsigned i = 0;
+	uint32_t i = 0;
 
 	STAILQ_FOREACH(match, matches, entry) {
 		struct isplit *isplit = isplits + i * 2;
@@ -414,21 +342,21 @@ isplits_create(struct match_stailq *matches, size_t matches_l) {
 /* Creates one split from its interval, and the list of people that are present
  */
 static inline struct split *
-split_create(unsigned who_hd, time_t min, time_t max)
+split_create(uint32_t who_hd, time_t min, time_t max)
 {
 	struct split *split = (struct split *) malloc(sizeof(struct split));
-	qdb_cur_t c;
-	unsigned id, ign;
+	uint32_t c;
+	const void *key, *value;
 
 	split->min = min;
 	split->max = max;
-	split->idml = idml_init();
+	split->ids = ids_init();
 	split->count = 0;
 
-	c = qdb_iter(who_hd, NULL);
+	c = qmap_iter(who_hd, NULL, 0);
 
-	while (qdb_next(&id, &ign, &c)) {
-		idml_push(&split->idml, id);
+	while (qmap_next(&key, &value, c)) {
+		ids_push(&split->ids, * (uint32_t *) key);
 		split->count++;
 	}
 
@@ -438,7 +366,7 @@ split_create(unsigned who_hd, time_t min, time_t max)
 /* Creates splits from the intermediary isplit array */
 static inline void
 splits_create(
-		unsigned who_hd,
+		uint32_t who_hd,
 		struct split_tailq *splits,
 		struct isplit *isplits,
 		size_t matches_l)
@@ -447,7 +375,7 @@ splits_create(
 
 	TAILQ_INIT(splits);
 
-	qdb_drop(who_hd);
+	qmap_drop(who_hd);
 
 	for (i = 0; i < matches_l * 2 - 1; i++) {
 		struct isplit *isplit = isplits + i;
@@ -456,9 +384,9 @@ splits_create(
 		time_t n, m;
 
 		if (isplit->max)
-			qdb_del(who_hd, &isplit->who, NULL);
+			qmap_del(who_hd, &isplit->who);
 		else
-			qdb_put(who_hd, &isplit->who, &isplit->who);
+			qmap_put(who_hd, &isplit->who, &isplit->who);
 
 		n = isplit->ts;
 		m = isplit2->ts;
@@ -474,7 +402,7 @@ splits_create(
 /* From a list of matched intervals, this creates the tail queue of splits
  */
 static void
-splits_init(unsigned who_hd, struct split_tailq *splits, struct match_stailq *matches, unsigned matches_l)
+splits_init(uint32_t who_hd, struct split_tailq *splits, struct match_stailq *matches, uint32_t matches_l)
 {
 	struct isplit *isplits;
 
@@ -490,22 +418,22 @@ splits_init(unsigned who_hd, struct split_tailq *splits, struct match_stailq *ma
 static void
 splits_get(struct split_tailq *splits, struct tidbs *dbs, time_t min, time_t max)
 {
-	unsigned who_hd = qdb_open(NULL, "u", "u", 0);
+	uint32_t who_hd = qmap_open(NULL, NULL, QM_HNDL, QM_HNDL, SPLITS_WHO_MASK, 0);
 	struct match_stailq matches;
-	unsigned matches_l = ti_intersect(dbs, &matches, min, max);
+	uint32_t matches_l = ti_intersect(dbs, &matches, min, max);
 	matches_fix(&matches, min, max);
 	splits_init(who_hd, splits, &matches, matches_l);
 	matches_free(&matches);
-	qdb_close(who_hd, 0);
+	qmap_close(who_hd);
 }
 
 /* Inserts a tail queue of splits within another, before the element provided
  */
 static inline void
 splits_concat_before(
-		struct split_tailq *target __attribute__((unused)),
+		struct split_tailq *target UNUSED,
 		struct split_tailq *origin,
-		struct split *before)
+		struct split *before UNUSED)
 {
 	struct split *split, *tmp;
 	TAILQ_FOREACH_SAFE(split, origin, entry, tmp) {
@@ -514,9 +442,10 @@ splits_concat_before(
 	}
 }
 
-/* Fills the spaces between splits (or on empty splits) with splits from BST B,
- * in order to resolve the situation where none of the people are present for
- * periods of time within the billing period (the aforementined gaps).
+/* Fills the spaces between splits (or on empty splits)
+ * with splits from BST B, in order to resolve the situation
+ * where none of the people are present for periods of time
+ * within the billing period (the aforementined gaps).
  */
 static inline void
 splits_fill(struct tidbs *tidbs, struct split_tailq *splits, time_t min, time_t max)
@@ -559,13 +488,13 @@ splits_fill(struct tidbs *tidbs, struct split_tailq *splits, time_t min, time_t 
 }
 
 /* Frees a tail queue of splits */
-static void
+static void UNUSED
 splits_free(struct split_tailq *splits)
 {
 	struct split *split, *split_tmp;
 
 	TAILQ_FOREACH_SAFE(split, splits, entry, split_tmp) {
-		idml_drop(&split->idml);
+		ids_drop(&split->ids);
 		TAILQ_REMOVE(splits, split, entry);
 		free(split);
 	}
@@ -575,36 +504,26 @@ splits_free(struct split_tailq *splits)
  * functions that process a valid type of line
  ******/
 
-static inline int
-it_exists(unsigned itd, time_t ts, unsigned id __attribute__((unused)))
+static inline int UNUSED
+it_exists(uint32_t itd, time_t ts, uint32_t id UNUSED)
 {
 	struct tidbs *tidbs = &ti_dbs[itd];
 	struct ti tmp;
-	DBC *cur;
-	DBT key, data;
 	int ret = 0;
+	uint32_t c = qmap_iter(tidbs->max, &ts, QM_RANGE);
+	const void *key, *value;
 
-	tidbs->max->cursor(tidbs->max, NULL, &cur, 0);
+	if (!qmap_next(&key, &value, c))
+		return ret;
 
-	memset(&key, 0, sizeof(DBT));
-	memset(&data, 0, sizeof(DBT));
-
-	key.data = &ts;
-	key.size = sizeof(time_t);
-
-	int res = cur->c_get(cur, &key, &data, DB_SET_RANGE);
-
-	if (res != DB_NOTFOUND) {
-		memcpy(&tmp, data.data, sizeof(struct ti));
-		ret = tmp.max > ts && tmp.min <= ts;
-	}
-
-	cur->close(cur);
+	memcpy(&tmp, value, sizeof(struct ti));
+	ret = tmp.max > ts && tmp.min <= ts;
+	qmap_fin(c);
 	return ret;
 }
 
 int
-it_stop(unsigned itd, time_t ts, unsigned id)
+it_stop(uint32_t itd, time_t ts, uint32_t id)
 {
 	struct tidbs *tidbs = &ti_dbs[itd];
 
@@ -618,7 +537,7 @@ it_stop(unsigned itd, time_t ts, unsigned id)
 }
 
 int
-it_start(unsigned itd, time_t ts, unsigned id)
+it_start(uint32_t itd, time_t ts, uint32_t id)
 {
 	struct tidbs *tidbs = &ti_dbs[itd];
 
@@ -630,12 +549,12 @@ it_start(unsigned itd, time_t ts, unsigned id)
 }
 
 struct it_internal {
-	unsigned itd;
+	uint32_t itd;
 	struct split_tailq splits;
 	struct split *next;
 };
 
-it_cur_t it_iter(unsigned itd, time_t start, time_t end)
+it_cur_t it_iter(uint32_t itd, time_t start, time_t end)
 {
 	struct it_internal *internal = malloc(sizeof(struct it_internal));
 	struct tidbs *tidbs = &ti_dbs[itd];
@@ -646,13 +565,13 @@ it_cur_t it_iter(unsigned itd, time_t start, time_t end)
 	return internal;
 }
 
-int it_next(time_t *min, time_t *max, unsigned *count, unsigned *who, it_cur_t *c) {
+int it_next(time_t *min, time_t *max, uint32_t *count, uint32_t *who, it_cur_t *c) {
 	struct it_internal *internal = *c;
 
 	if (!internal->next)
 		return 0;
 
-	while ((*who = idml_pop(&internal->next->idml)) == (unsigned) -1) {
+	while ((*who = ids_pop(&internal->next->ids)) == (uint32_t) -1) {
 		internal->next = TAILQ_NEXT(internal->next, entry);
 		if (!internal->next)
 			return 0;
@@ -664,9 +583,9 @@ int it_next(time_t *min, time_t *max, unsigned *count, unsigned *who, it_cur_t *
 	return 1;
 }
 
-unsigned it_init(char *fname) {
+uint32_t it_init(char *fname) {
 	struct tidbs *tidbs;
-	unsigned id;
+	uint32_t id;
 
 	if (ti_first) {
 		idm = idm_init();

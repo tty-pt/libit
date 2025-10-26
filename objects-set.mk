@@ -1,0 +1,1 @@
+CFLAGS-libit-o := -fPIC
