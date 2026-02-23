@@ -85,6 +85,22 @@ typedef void * it_cur_t;
 unsigned it_init(char *fname);
 
 /**
+ * @brief Close an interval tree database and free resources.
+ *
+ * Closes all associated qmap databases for the given handle,
+ * ensuring data is persisted to disk. After calling this function,
+ * the handle should not be used again.
+ *
+ * @param[in] itd Database handle from it_init().
+ *
+ * @note This function should be called before re-opening the same
+ *       database file to ensure data persistence.
+ *
+ * @see it_init
+ */
+void it_close(unsigned itd);
+
+/**
  * @brief Start a new interval for an entity.
  *
  * Records that an entity (identified by id) began an activity

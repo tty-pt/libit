@@ -84,6 +84,7 @@ time_t sscantime(char *buf) {
 	aux = strptime(buf, "%Y-%m-%dT%H:%M:%S", &tm);
 	if (!aux && !strptime(buf, "%Y-%m-%d", &tm)) {
 		char *endptr;
+		errno = 0; /* Reset errno before strtoull */
 		unsigned long long int timestamp = strtoull(buf, &endptr, 10);
 		CBUG(errno || *endptr != '\0' || buf == endptr, "Invalid date or timestamp");
 		return (time_t)timestamp;
@@ -100,11 +101,15 @@ time_t sscantime(char *buf) {
 void printtime(char buf[DATE_MAX_LEN], time_t ts) {
 	struct tm tm;
 
-	if (ts == mtinf)
+	if (ts == mtinf) {
 		strcpy(buf, "-inf");
+		return;
+	}
 
-	if (ts == tinf)
+	if (ts == tinf) {
 		strcpy(buf, "inf");
+		return;
+	}
 
 	tm = *localtime(&ts);
 
@@ -158,10 +163,14 @@ libit_init(void)
 static void
 tidbs_init(struct tidbs *dbs, char *fname)
 {
-	dbs->ti = qmap_open(fname, "ti", qm_ti, qm_ti, TI_MASK, 0);
-	dbs->max = qmap_open(fname, "max", qm_time, qm_ti, TI_MASK, QM_SORTED);
+	uint32_t flags = fname ? QM_MIRROR : 0;  /* QM_MIRROR required for file persistence */
+	
+	/* Only persist the primary 'ti' database; secondary indexes are in-memory only */
+	dbs->ti = qmap_open(fname, "ti", qm_ti, qm_ti, TI_MASK, flags);
+	dbs->max = qmap_open(NULL, NULL, qm_time, qm_ti, TI_MASK, QM_SORTED);
+	dbs->id = qmap_open(NULL, NULL, qm_id, qm_ti, TI_MASK, QM_SORTED);
+	
 	qmap_cmp_set(qm_time, timax_cmp);
-	dbs->id = qmap_open(fname, "id", qm_id, qm_ti, TI_MASK, QM_SORTED);
 	/* NOTE: We do NOT use qmap_assoc because QM_SORTED doesn't support duplicate keys properly.
 	 * Instead, we manually maintain the secondary indexes in ti_insert and ti_finish_last. */
 }
@@ -609,4 +618,18 @@ uint32_t it_init(char *fname) {
 	tidbs_init(tidbs, fname);
 
 	return id;
+}
+
+void it_close(unsigned itd) {
+	struct tidbs *tidbs = &ti_dbs[itd];
+	
+	/* Persist data to disk BEFORE closing (only saves file-backed maps) */
+	qmap_save();
+	
+	/* Close all databases */
+	qmap_close(tidbs->ti);
+	qmap_close(tidbs->max);
+	qmap_close(tidbs->id);
+	
+	idm_del(&idm, itd);
 }

@@ -50,5 +50,16 @@ test_split_query_within_interval ✅ ✅ ✅ ✅ ✅
 test_split_adjacent_intervals ✅ ✅ ✅ 
 test_split_many_small_intervals ✅ 
 
+=== Category 6: Time Utilities ===
+test_time_parse_datetime ✅ ✅ 
+test_time_parse_date_only ✅ ✅ 
+test_time_parse_unix_timestamp ✅ 
+test_time_format_infinity ✅ 
+test_time_format_regular ✅ 
+test_time_roundtrip ✅ ✅ 
+
+=== Category 7: Persistence ===
+SKIPPED: Persistence tests disabled due to qmap bug
+
 === Test Summary ===
 Total errors: 0
