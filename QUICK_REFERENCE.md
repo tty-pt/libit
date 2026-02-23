@@ -2,7 +2,7 @@
 
 A quick reference guide for developers using libit (Interval Tree Library).
 
-## What's New in v1.2.0
+## What's New in v1.2.1
 
 ✅ **32x more intervals:** 2,048 → 65,536 per database  
 ✅ **16x more overlaps:** 256 → 4,096 entities per split  
@@ -34,7 +34,7 @@ make all
 // Memory-only database
 unsigned itd = it_init(NULL);
 
-// File-backed database (NOT WORKING - see Known Issues)
+// File-backed database (persists to disk)
 unsigned itd = it_init("mydata.qmap");
 ```
 
@@ -412,12 +412,12 @@ gcc -o myapp myapp.c $(pkg-config --cflags --libs libit)
 
 ## Version Info
 
-- **Version**: libit v1.1.0
-- **Dependencies**: qmap v0.6.0, qsys
-- **Status**: Production-ready for in-memory use
-- **Known Issues**: File persistence not working (qmap bugs)
+- **Version**: libit v1.2.1
+- **Dependencies**: qmap v0.7.0+, qsys
+- **Status**: Production-ready with full persistence support
+- **Features**: 65k intervals, 4k overlaps, input validation, file persistence
 - **License**: BSD-2-Clause
 
 ---
 
-*Quick reference for libit v1.1.0 - Generated from comprehensive testing (Phases 1-4)*
+*Quick reference for libit v1.2.1*
