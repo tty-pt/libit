@@ -59,7 +59,11 @@ test_time_format_regular ✅
 test_time_roundtrip ✅ ✅ 
 
 === Category 7: Persistence ===
-SKIPPED: Persistence tests disabled (qmap bugs persist as of b1bc322)
+test_persist_save_load ✅ 
+test_persist_multiple_intervals ✅ 
+test_persist_empty_database ✅ 
+test_persist_append ✅ 
+test_persist_large_dataset ✅ 
 
 === Category 8: Input Validation ===
 test_validation_extreme_timestamp_start ✅ ✅ 

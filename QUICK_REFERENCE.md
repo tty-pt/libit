@@ -1,4 +1,4 @@
-# libit v1.2.0 Quick Reference
+# libit v1.2.1 Quick Reference
 
 A quick reference guide for developers using libit (Interval Tree Library).
 
@@ -151,22 +151,21 @@ it_stop(itd, t + 1, id);  // Minimum duration of 1
 
 ## Known Issues
 
-### ❌ File Persistence NOT WORKING (Still in v1.2.0)
+### ✅ File Persistence NOW WORKING (v1.2.1+)
 ```c
-// This DOES NOT work:
+// This NOW works in v1.2.1+:
 unsigned itd = it_init("data.qmap");
 // ... operations ...
 it_close(itd);
-// Data is NOT saved!
+// Data is saved and loaded on next it_init("data.qmap")!
 ```
 
-**Reason**: Critical bugs in qmap (tested with b1bc322, still failing)
+**Note**: In v1.2.1, removed QM_MIRROR flag (qmap v0.7.0+ no longer requires it)
 
-**Workaround**: Use in-memory databases only until qmap is fixed
+### ✅ Design Limitations (All Fixed in v1.2.1!)
 
-### ✅ Design Limitations (Most Fixed in v1.2.0!)
-
-**Fixed in v1.2.0:**
+**Fixed in v1.2.1:**
+- ✅ File persistence: Now working!
 - ✅ TI_MASK limit: 2,048 → 65,536 intervals
 - ✅ SPLITS_WHO_MASK limit: 256 → 4,096 entities
 - ✅ Extreme timestamps: Now validated

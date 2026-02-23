@@ -1133,17 +1133,11 @@ int main(void) {
 	
 	/* Category 7: Persistence */
 	printf("\n=== Category 7: Persistence ===\n");
-	/* DISABLED: Persistence tests cause segmentation fault with qmap b1bc322
-	 * Tested 2026-02-23 with qmap version b1bc322 (includes df5a7ac fix)
-	 * Bugs still present - keeping tests disabled pending upstream qmap fixes
-	 * See QMAP_PERSISTENCE_BUGS.md for details
 	RUN_TEST(persist_save_load);
 	RUN_TEST(persist_multiple_intervals);
 	RUN_TEST(persist_empty_database);
 	RUN_TEST(persist_append);
 	RUN_TEST(persist_large_dataset);
-	*/
-	printf("SKIPPED: Persistence tests disabled (qmap bugs persist as of b1bc322)\n");
 	
 	/* Category 8: Input Validation */
 	printf("\n=== Category 8: Input Validation ===\n");

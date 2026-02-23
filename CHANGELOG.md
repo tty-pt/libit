@@ -5,6 +5,32 @@ All notable changes to libit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-02-23
+
+### Fixed - File Persistence
+
+**File Persistence Now Works** ✅
+- Removed QM_MIRROR flag from `it_init()` (src/libit.c:166)
+- **Root cause:** qmap v0.7.0+ no longer requires QM_MIRROR for file persistence
+- **Solution:** Changed flags from `QM_MIRROR` to `0`
+- **Why it works:** libit doesn't need bidirectional lookups (qmap_assoc), so QM_MIRROR was unnecessary
+
+**Test Results:**
+- All 5 Category 7 persistence tests now passing:
+  - test_persist_save_load ✅
+  - test_persist_multiple_intervals ✅
+  - test_persist_empty_database ✅
+  - test_persist_append ✅
+  - test_persist_large_dataset ✅
+
+**Total Test Count:** 74 tests (59 core + 15 extended)
+
+### Documentation Updated
+- LIBIT_LIMITATIONS.md: Added section 5 for persistence fix
+- QMAP_PERSISTENCE_BUGS.md: Marked as resolved
+
+---
+
 ## [1.2.0] - 2026-02-23
 
 ### Fixed - Design Limitations Addressed

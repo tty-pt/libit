@@ -167,3 +167,92 @@ These bugs block file persistence in libit until resolved. Phase 3 partially com
 - ⏸️ Category 7 (Persistence): 5 tests implemented but disabled
 
 **Total Phase 3 contribution**: 50 tests (44 from Phases 1-2 + 6 from Category 6)
+
+---
+
+## Update: February 23, 2026 - Re-tested with qmap b1bc322
+
+### Background
+During libit v1.2.0 development, we discovered that qmap had a potentially relevant fix:
+- **Commit df5a7ac**: "Fix two major design gotchas: file loading and pointer invalidation"
+- This commit claimed to remove QM_MIRROR requirement for file loading
+- Current qmap version: **b1bc322** (includes df5a7ac merged into main)
+
+### Test Results
+Re-enabled all 5 Category 7 persistence tests to check if qmap fixes resolved the issues.
+
+**Result**: **FAILED** - Segmentation fault on test execution
+
+**Command**:
+```bash
+LD_LIBRARY_PATH=/home/quirinpa/libit/lib:/usr/lib ./bin/test
+```
+
+**Output**:
+```
+Segmentation fault (core dumped)
+```
+
+### Conclusion
+The qmap persistence bugs **persist as of version b1bc322** (2026-02-23).
+
+Despite the df5a7ac fix claiming to address file loading issues, the segmentation fault indicates:
+1. The bugs are still present, OR
+2. The fix introduced new issues, OR  
+3. libit's usage pattern exposes a different bug
+
+**Action Taken**: Category 7 persistence tests remain disabled with updated comment:
+```c
+/* DISABLED: Persistence tests cause segmentation fault with qmap b1bc322
+ * Tested 2026-02-23 with qmap version b1bc322 (includes df5a7ac fix)
+ * Bugs still present - keeping tests disabled pending upstream qmap fixes
+ * See QMAP_PERSISTENCE_BUGS.md for details
+```
+
+**Recommendation**: Continue monitoring qmap development. May need to:
+- File detailed bug report with qmap maintainers
+- Investigate if QM_MIRROR removal (per df5a7ac) requires code changes in libit
+- Consider alternative persistence strategies if qmap issues persist
+
+---
+
+## UPDATE: February 23, 2026 (libit v1.2.1)
+
+### Resolution: PERSISTENCE NOW WORKS ✅
+
+**Solution Found**: The issue was NOT a bug in qmap that needed fixing, but rather a **design change** in qmap v0.7.0+.
+
+### What Changed
+qmap v0.7.0+ (specifically commit df5a7ac) made a fundamental change:
+- **Before**: QM_MIRROR was **required** for file persistence
+- **After**: QM_MIRROR is **optional**; file persistence works without it
+- QM_MIRROR is now only needed for bidirectional lookups
+
+### libit Fix Applied
+Changed `src/libit.c:166`:
+```c
+// OLD (v1.2.0):
+uint32_t flags = fname ? QM_MIRROR : 0;
+
+// NEW (v1.2.1):
+uint32_t flags = 0;  // QM_MIRROR optional in qmap v0.7.0+
+```
+
+### Test Results (v1.2.1)
+All 5 persistence tests now pass:
+```
+=== Category 7: Persistence ===
+test_persist_save_load ✅ 
+test_persist_multiple_intervals ✅ 
+test_persist_empty_database ✅ 
+test_persist_append ✅ 
+test_persist_large_dataset ✅ 
+```
+
+### Why This Works
+- libit doesn't use `qmap_assoc()` (bidirectional lookups)
+- libit only needs basic file persistence, not QM_MIRROR features
+- qmap v0.7.0+ automatically loads persisted data without QM_MIRROR flag
+
+### Conclusion
+The qmap bugs documented above are **specific to QM_MIRROR usage** and do not affect libit since libit doesn't need QM_MIRROR. By removing the QM_MIRROR flag, file persistence now works perfectly.

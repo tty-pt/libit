@@ -2,7 +2,7 @@
 
 This document describes design limitations discovered during comprehensive testing. Some limitations have been addressed in subsequent versions.
 
-## Summary of Current Status (v1.2.0)
+## Summary of Current Status (v1.2.1)
 
 | Limitation | Status | Version Fixed |
 |------------|--------|---------------|
@@ -10,13 +10,14 @@ This document describes design limitations discovered during comprehensive testi
 | SPLITS_WHO_MASK Limit (256 entities) | **FIXED** | v1.2.0 |
 | Extreme Timestamps (overflow risk) | **FIXED** | v1.2.0 |
 | UINT32_MAX Entity ID (sentinel conflict) | **FIXED** | v1.2.0 |
+| File Persistence (qmap bugs) | **FIXED** | v1.2.1 |
 | Zero-Duration Intervals (start == stop) | **NOT FIXED** | By Design |
 
-**See CHANGELOG.md for v1.2.0 implementation details.**
+**See CHANGELOG.md for v1.2.1 implementation details.**
 
 ---
 
-# Fixed Limitations (as of v1.2.0)
+# Fixed Limitations (as of v1.2.1)
 
 The following limitations have been addressed:
 
@@ -356,9 +357,63 @@ int it_stop(unsigned itd, time_t ts, unsigned id);
 
 ---
 
+## 5. File Persistence: qmap QM_MIRROR Bug → FIXED ✅
+
+**Status:** FIXED in v1.2.1 (removed QM_MIRROR requirement)
+
+### Original Problem (v1.1.0 - v1.2.0)
+
+### Description
+File persistence using `it_init("/path/to/file.db")` caused segmentation faults when closing and reopening the database. This was due to bugs in the qmap library's file persistence implementation.
+
+### Root Cause
+The qmap library (prior to v0.7.0) required the `QM_MIRROR` flag for file persistence. However, qmap had multiple bugs related to QM_MIRROR:
+1. Multiple databases per file failed to persist
+2. Process exit crashes with custom types and QM_MIRROR
+3. Segmentation faults when reopening file-backed databases
+
+### Source Code
+Original code in `src/libit.c:166`:
+```c
+uint32_t flags = fname ? QM_MIRROR : 0;  /* QM_MIRROR required for file persistence */
+```
+
+### Impact
+- File persistence was completely broken
+- Category 7 persistence tests (5 tests) were disabled
+- Applications requiring persistence could not use libit
+
+### Evidence
+Test results showing the failure:
+```
+=== Category 7: Persistence ===
+Segmentation fault (core dumped)
+```
+
+### Fix Applied (v1.2.1)
+qmap v0.7.0+ (commit df5a7ac) changed file persistence to work WITHOUT QM_MIRROR:
+- File loading now happens automatically when opening file-backed maps
+- QM_MIRROR is now optional, only needed for bidirectional lookups
+- libit doesn't need bidirectional lookups (no qmap_assoc usage)
+
+Changed `src/libit.c:166`:
+```c
+uint32_t flags = 0;  /* QM_MIRROR optional in qmap v0.7.0+, not needed for persistence */
+```
+
+### Test Coverage (v1.2.1)
+All 5 persistence tests now pass:
+- Category 7: test_persist_save_load ✅
+- Category 7: test_persist_multiple_intervals ✅
+- Category 7: test_persist_empty_database ✅
+- Category 7: test_persist_append ✅
+- Category 7: test_persist_large_dataset ✅
+
+---
+
 # Remaining Limitations (Not Fixed)
 
-## 5. Zero-Duration Intervals Not Supported (BY DESIGN)
+## 6. Zero-Duration Intervals Not Supported (BY DESIGN)
 
 ### Description
 Intervals where the start and stop timestamps are identical (zero duration, representing a single point in time) are not properly supported by libit's query mechanism.

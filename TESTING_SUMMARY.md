@@ -2,22 +2,35 @@
 
 This document summarizes the comprehensive testing effort for libit across all versions.
 
-## Latest: v1.2.0 (February 2026)
+## Latest: v1.2.1 (February 2026)
 
 ### Overview
-- **Version**: v1.2.0
-- **Focus**: Design limitation fixes + input validation
-- **Total Tests**: 69 automated tests (54 core + 15 extended)
-- **New Tests**: 7 (4 validation + 3 boundary tests)
+- **Version**: v1.2.1
+- **Focus**: File persistence fix
+- **Total Tests**: 74 automated tests (59 core + 15 extended)
+- **New Tests**: 5 (persistence tests re-enabled)
 - **Status**: All passing ✅
 
-### What Changed in v1.2.0
+### What Changed in v1.2.1
 
 **Code Changes:**
-- Increased TI_MASK: 0x7FF → 0xFFFF (32x capacity)
-- Increased SPLITS_WHO_MASK: 0xFF → 0xFFF (16x capacity)
-- Added input validation to it_start() and it_stop()
-- Updated API documentation in it.h
+- Removed QM_MIRROR flag from it_init() (qmap v0.7.0+ change)
+- Re-enabled Category 7 persistence tests (5 tests)
+- File persistence now works!
+
+### Test Results Summary (v1.2.1)
+
+| Category | Tests | Status | Notes |
+|----------|-------|--------|-------|
+| 1: Basic Initialization | 3 | ✅ PASS | No changes |
+| 2: Basic Start/Stop Operations | 10 | ✅ PASS | No changes |
+| 3: Multiple Entities | 15 | ✅ PASS | No changes |
+| 4: Intersection Queries | 8 | ✅ PASS | No changes |
+| 5: Split Computation | 8 | ✅ PASS | No changes |
+| 6: Time Utilities | 6 | ✅ PASS | No changes |
+| 7: Persistence | 5 | ✅ **NEW** | Re-enabled in v1.2.1 |
+| 8: Input Validation | 4 | ✅ PASS | Added in v1.2.0 |
+| **Core Total** | **59** | **59✅** | **+ 5 persistence tests** |
 
 **Test Changes:**
 - Added Category 8: Input Validation (4 tests)
@@ -92,17 +105,16 @@ Performance remains excellent despite 32x capacity increase.
    - test_validation_uint32_max_start ✅
    - test_validation_uint32_max_stop ✅
 
-### Known Issues (v1.2.0)
+### Known Issues (v1.2.1)
 
-**Still Not Fixed:**
-- ❌ File persistence (qmap bugs persist in b1bc322)
+**All Fixed in v1.2.1:**
+- ✅ File persistence: NOW WORKING (removed QM_MIRROR)
 - ❌ Zero-duration intervals (by design)
 
-**Persistence Test Results:**
-- Re-tested with qmap b1bc322 (includes df5a7ac fix)
-- Result: Segmentation fault
-- Tests remain disabled
-- See QMAP_PERSISTENCE_BUGS.md for details
+**Persistence Test Results (v1.2.1):**
+- Removed QM_MIRROR flag (qmap v0.7.0+ no longer requires it)
+- All 5 persistence tests passing
+- See QMAP_PERSISTENCE_BUGS.md for resolution details
 
 ---
 

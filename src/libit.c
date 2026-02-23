@@ -163,7 +163,7 @@ libit_init(void)
 static void
 tidbs_init(struct tidbs *dbs, char *fname)
 {
-	uint32_t flags = fname ? QM_MIRROR : 0;  /* QM_MIRROR required for file persistence */
+	uint32_t flags = 0;  /* QM_MIRROR optional in qmap v0.7.0+, not needed for persistence */
 	
 	/* Only persist the primary 'ti' database; secondary indexes are in-memory only */
 	dbs->ti = qmap_open(fname, "ti", qm_ti, qm_ti, TI_MASK, flags);
