@@ -445,24 +445,23 @@ All timings from test_extended on development machine:
 ## Recommendations
 
 ### For v1.1.1 Release
-1. Increase TI_MASK to 0xFFFF (65535 intervals)
-2. Increase SPLITS_WHO_MASK to 0xFFF (4095 entities)
-3. Add runtime limit checking with errno reporting
-4. Document entity ID restriction (no UINT32_MAX)
+### Completed in v1.2.0/v1.2.1
+1. ✅ Increase TI_MASK to 0xFFFF (65535 intervals) - v1.2.0
+2. ✅ Increase SPLITS_WHO_MASK to 0xFFF (4095 entities) - v1.2.0
+3. ✅ Add runtime limit checking with errno reporting - v1.2.0
+4. ✅ Document entity ID restriction (no UINT32_MAX) - v1.2.0
 
-### For v1.2.0 Release
-1. Wait for qmap persistence bug fixes
-2. Re-enable Category 7 tests
-3. Make TI_MASK and SPLITS_WHO_MASK configurable
-4. Add it_get_limits() API function
-5. Consider supporting zero-duration intervals
+### For Future Releases
+1. Make TI_MASK and SPLITS_WHO_MASK configurable at runtime
+2. Add it_get_limits() API function to query current mask values
+3. Consider supporting zero-duration intervals
 
 ### For Library Users
-1. Keep interval count < 2000 per database
-2. Keep overlapping entities < 250 per time period
-3. Use timestamps in reasonable ranges (1970-2100)
-4. Avoid entity ID 4,294,967,295
-5. Use minimum duration of 1 for point events
+1. Keep interval count < 65,000 per database (v1.2.0+)
+2. Keep overlapping entities < 4,000 per time period (v1.2.0+)
+3. Use timestamps in range [LONG_MIN/2, LONG_MAX/2] (v1.2.0+)
+4. Avoid entity ID UINT32_MAX (v1.2.0+)
+5. Use minimum duration of 1 for point events (still applies)
 
 ## Conclusion
 

@@ -374,7 +374,7 @@ LD_LIBRARY_PATH=./lib ./bin/test_extended
 | `it_stop(itd, time, who)` | Stop interval for entity |
 | `it_iter(itd, min, max)` | Create query iterator |
 | `it_next(...)` | Get next result from iterator |
-| `it_close(itd)` | Close database (currently ineffective) |
+| `it_close(itd)` | Close database (saves data in v1.2.1+) |
 
 ### Time Functions
 

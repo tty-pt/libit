@@ -519,7 +519,7 @@ These limitations were discovered through systematic stress testing in Phase 4:
 
 ### Verification Commands
 ```bash
-# Run core tests (54 tests including validation)
+# Run core tests (59 tests including validation + persistence)
 cd /home/quirinpa/libit
 make
 LD_LIBRARY_PATH=./lib ./bin/test
@@ -556,7 +556,7 @@ LD_LIBRARY_PATH=./lib ./bin/test_extended
 
 ### Compatibility Notes
 
-**v1.2.0 (current):**
+**v1.2.1 (current):**
 - TI_MASK: 0xFFFF (65,536 intervals)
 - SPLITS_WHO_MASK: 0xFFF (4,096 entities)
 - Input validation enabled (errno-based error reporting)

@@ -169,15 +169,6 @@ Performance remains excellent with increased limits:
 - Integration test script (test.sh) with regression testing via expects.txt
 - Test output formatting with ✅/❌ indicators for easy visual verification
 - Added it_close() function for future persistence support (currently no-op for in-memory databases)
-- Documentation of qmap persistence bugs (see QMAP_PERSISTENCE_BUGS.md)
-
-### Known Limitations
-**Discovered during Phase 4 extended testing:**
-- **TI_MASK limit**: Maximum ~2048 intervals per database (TI_MASK=0x7FF in src/libit.c:28)
-- **SPLITS_WHO_MASK limit**: Maximum 256 entities per split interval (SPLITS_WHO_MASK=0xFF in src/libit.c:27)
-- **Extreme timestamps**: Values near INT64_MAX may overflow on some platforms
-- **UINT32_MAX entity ID**: Conflicts with IDM_MISS sentinel value (0xFFFFFFFF)
-- **Zero-duration intervals**: Intervals where start==stop are not supported (may not be queryable)
 
 ### Notes
 - Code is fully compatible with qmap v0.6.0 (updated in v1.0.0)
@@ -185,13 +176,11 @@ Performance remains excellent with increased limits:
   - Improved pointer stability (allocation reuse)
   - Automatic file loading for persistence
   - Enhanced qmap documentation
-- **File persistence currently NOT WORKING** due to critical bugs in qmap v0.6.0:
-  - Bug #1: Multiple databases per file with QM_MIRROR fails to persist data
-  - Bug #2: Process exit crash with QM_MIRROR and custom types ("free(): invalid pointer")
-  - See QMAP_PERSISTENCE_BUGS.md for detailed investigation and reproduction steps
-  - Persistence tests (Category 7) are implemented but disabled until qmap is fixed
-  - it_close() function added for future persistence support but currently ineffective
+- Note: File persistence issues were resolved in v1.2.1
 
+---
+
+## [1.0.0] - 2025-10-20
 ## [1.0.0] - 2025-10-26
 
 ### Added
