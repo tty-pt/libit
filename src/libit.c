@@ -6,6 +6,7 @@
 
 #include <errno.h>
 #include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -72,7 +73,7 @@ static int ti_first = 1;
 
 static idm_t idm;
 
-uint32_t qm_ti, qm_time;
+uint32_t qm_ti, qm_time, qm_id;
 
 /* get timestamp from ISO-8601 date string */
 time_t sscantime(char *buf) {
@@ -113,23 +114,6 @@ void printtime(char buf[DATE_MAX_LEN], time_t ts) {
 		strftime(buf, DATE_MAX_LEN, "%F", &tm);
 }
 
-/* create time interval BTREE keys from time interval HASH db*/
-static void
-map_tidb_timaxdb(const void **skey,
-		const void *const pkey UNUSED,
-		const void * const value)
-{
-	*skey = &((struct ti *) value)->max;
-}
-/* create id BTREE keys from time interval HASH db */
-static void
-map_tidb_tiiddb(const void **skey,
-		const void *const pkey UNUSED,
-		const void * const value)
-{
-	*skey = &((struct ti *) value)->who;
-}
-
 /******
  * key ordering compare functions
  ******/
@@ -166,6 +150,8 @@ libit_init(void)
 {
 	qm_ti = qmap_reg(sizeof(struct ti));
 	qm_time = qmap_reg(sizeof(time_t));
+	qm_id = qmap_reg(sizeof(uint32_t));
+	qmap_cmp_set(qm_id, tiid_cmp);
 }
 
 /* initialize ti dbs */
@@ -174,18 +160,17 @@ tidbs_init(struct tidbs *dbs, char *fname)
 {
 	dbs->ti = qmap_open(fname, "ti", qm_ti, qm_ti, TI_MASK, 0);
 	dbs->max = qmap_open(fname, "max", qm_time, qm_ti, TI_MASK, QM_SORTED);
-	qmap_assoc(dbs->max, dbs->ti, map_tidb_timaxdb);
-	qmap_cmp_set(dbs->max, timax_cmp);
-	dbs->id = qmap_open(fname, "id", QM_U32, qm_ti, TI_MASK, QM_SORTED);
-	qmap_assoc(dbs->ti, dbs->ti, map_tidb_tiiddb);
-	qmap_cmp_set(dbs->max, tiid_cmp);
+	qmap_cmp_set(qm_time, timax_cmp);
+	dbs->id = qmap_open(fname, "id", qm_id, qm_ti, TI_MASK, QM_SORTED);
+	/* NOTE: We do NOT use qmap_assoc because QM_SORTED doesn't support duplicate keys properly.
+	 * Instead, we manually maintain the secondary indexes in ti_insert and ti_finish_last. */
 }
 
 /******
  * ti (struct ti to struct ti primary db) related functions
  ******/
  
-/* insert a time interval into an AVL */
+/* insert a time interval */
 static void
 ti_insert(struct tidbs *dbs, uint32_t id, time_t start, time_t end)
 {
@@ -199,19 +184,30 @@ ti_insert(struct tidbs *dbs, uint32_t id, time_t start, time_t end)
 static void
 ti_finish_last(struct tidbs *dbs, uint32_t id, time_t end)
 {
-	struct ti ti;
+	struct ti ti, old_ti;
 	const void *key, *value;
-	uint32_t c = qmap_iter(dbs->id, &id, QM_RANGE);
+	uint32_t c = qmap_iter(dbs->ti, NULL, 0);  // Iterate through ALL intervals
+	int found = 0;
 
 	while (qmap_next(&key, &value, c)) {
 		memcpy(&ti, value, sizeof(ti));
-		if (ti.max == tinf) {
-			qmap_del(dbs->id, key);
+		
+		/* Find the open interval (max=tinf) for this entity */
+		if (ti.who == id && ti.max == tinf) {
+			memcpy(&old_ti, &ti, sizeof(ti));
+			found = 1;
 			qmap_fin(c);
 			break;
 		}
 	}
 
+	if (!found) {
+		return;  /* No open interval found */
+	}
+
+	/* Delete old interval and insert updated one */
+	qmap_del(dbs->ti, &old_ti);
+	
 	ti.max = end;
 	qmap_put(dbs->ti, &ti, &ti);
 }
@@ -225,7 +221,7 @@ ti_intersect(struct tidbs *dbs, struct match_stailq *matches, time_t min, time_t
 	int ret = 0;
 
 	STAILQ_INIT(matches);
-	uint32_t c = qmap_iter(dbs->max, &min, QM_RANGE);
+	uint32_t c = qmap_iter(dbs->ti, NULL, 0);  // Iterate through ALL intervals
 
 	while (qmap_next(&key, &value, c)) {
 		memcpy(&tmp, value, sizeof(struct ti));
@@ -246,18 +242,19 @@ int
 ti_present(struct tidbs *dbs, time_t when, uint32_t who) {
 	int ret = 0;
 	struct ti tmp;
-	uint32_t c = qmap_iter(dbs->max, &when, QM_RANGE);
+	uint32_t c = qmap_iter(dbs->ti, NULL, 0);  // Iterate through ALL intervals
 	const void *key, *value;
-
+	
 	while (qmap_next(&key, &value, c)) {
 		memcpy(&tmp, value, sizeof(struct ti));
-
+		
 		if (tmp.who == who && tmp.max > when && tmp.min <= when) {
 			ret++;
 			break;
 		}
 	}
-
+	
+	qmap_fin(c);
 	return ret;
 }
 
@@ -510,14 +507,17 @@ it_exists(uint32_t itd, time_t ts, uint32_t id UNUSED)
 	struct tidbs *tidbs = &ti_dbs[itd];
 	struct ti tmp;
 	int ret = 0;
-	uint32_t c = qmap_iter(tidbs->max, &ts, QM_RANGE);
+	uint32_t c = qmap_iter(tidbs->ti, NULL, 0);  // Iterate through ALL intervals
 	const void *key, *value;
 
-	if (!qmap_next(&key, &value, c))
-		return ret;
-
-	memcpy(&tmp, value, sizeof(struct ti));
-	ret = tmp.max > ts && tmp.min <= ts;
+	while (qmap_next(&key, &value, c)) {
+		memcpy(&tmp, value, sizeof(struct ti));
+		if (tmp.max > ts && tmp.min <= ts) {
+			ret = 1;
+			break;
+		}
+	}
+	
 	qmap_fin(c);
 	return ret;
 }

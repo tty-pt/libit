@@ -1,0 +1,34 @@
+Running libit tests...
+
+=== Category 1: Basic Initialization ===
+test_init_memory ✅ 
+test_init_file ✅ 
+test_init_multiple ✅ ✅ 
+
+=== Category 2: Basic Start/Stop Operations ===
+test_start_single ✅ 
+test_stop_single ✅ 
+test_start_stop_sequence ✅ ✅ ✅ ✅ 
+test_duplicate_start ✅ ✅ 
+test_stop_without_start ✅ 
+test_start_stop_same_time ✅ ✅ 
+test_zero_timestamp ✅ ✅ 
+test_negative_timestamp ✅ ✅ 
+test_large_timestamp ✅ ✅ 
+test_backward_interval ✅ 
+
+=== Category 3: Multiple Entities ===
+test_multiple_entities_separate ✅ ✅ ✅ 
+test_multiple_entities_overlapping ✅ ✅ ✅ 
+test_qmap_association_two_entities ✅ ✅ 
+test_qmap_association_reverse_order ✅ ✅ ✅ 
+test_qmap_association_mixed_order ✅ ✅ ✅ ✅ 
+test_multiple_entities_nonoverlapping ✅ 
+test_same_entity_multiple_intervals ✅ 
+test_interleaved_operations ✅ 
+test_many_entities ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ 
+test_entity_zero ✅ ✅ 
+test_large_entity_id ✅ ✅ 
+
+=== Test Summary ===
+Total errors: 0

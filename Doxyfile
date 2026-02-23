@@ -1,0 +1,2 @@
+PROJECT_NAME           = "Interval Tree Library"
+@INCLUDE = ../mk/Doxyfile
