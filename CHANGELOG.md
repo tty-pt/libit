@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed printtime() missing return statements after setting "-inf"/"inf", preventing crashes on extreme timestamps (Phase 3 - src/libit.c:106, 111)
 
 ### Added
-- Comprehensive test suite (Phases 1, 2 & 3):
+- Comprehensive test suite (Phases 1, 2, 3 & 4):
   - Category 1: Basic initialization tests (3 tests)
   - Category 2: Basic start/stop operation tests (10 tests)
   - Category 3: Multiple entities tests (15 tests)
@@ -31,11 +31,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Category 5: Split computation tests (8 tests)
   - Category 6: Time utilities tests (6 tests - sscantime, printtime)
   - Category 7: Persistence tests (5 tests - DISABLED due to qmap bugs)
-- Total: 50 automated tests covering all core functionality
+  - **Category 8: Extended tests** (12 tests - stress, performance, edge cases):
+    - Test 1: Large dataset stress test (2000 intervals)
+    - Test 2: Many overlapping intervals (250 entities)
+    - Test 3: Sequential insertion performance benchmark
+    - Test 4: Query performance on sparse data
+    - Test 5: Extreme timestamp values (INT64_MAX, negative timestamps)
+    - Test 6: Split computation performance (100 overlapping entities)
+    - Test 7: Repeated operations (memory leak detection)
+    - Test 8: Boundary query performance
+    - Test 9: Entity ID edge cases (ID=0, ID=UINT32_MAX)
+    - Test 10: Time utility functions stress test (10,000 parse/format operations)
+    - Test 11: Interleaved operations stress test (500 entities)
+    - Test 12: Zero-duration intervals (start == stop)
+- Total: 62 automated tests covering all functionality plus performance benchmarks
+- test_extended binary with performance metrics (microsecond timing, throughput reporting)
 - Integration test script (test.sh) with regression testing via expects.txt
 - Test output formatting with ✅/❌ indicators for easy visual verification
 - Added it_close() function for future persistence support (currently no-op for in-memory databases)
 - Documentation of qmap persistence bugs (see QMAP_PERSISTENCE_BUGS.md)
+
+### Known Limitations
+**Discovered during Phase 4 extended testing:**
+- **TI_MASK limit**: Maximum ~2048 intervals per database (TI_MASK=0x7FF in src/libit.c:28)
+- **SPLITS_WHO_MASK limit**: Maximum 256 entities per split interval (SPLITS_WHO_MASK=0xFF in src/libit.c:27)
+- **Extreme timestamps**: Values near INT64_MAX may overflow on some platforms
+- **UINT32_MAX entity ID**: Conflicts with IDM_MISS sentinel value (0xFFFFFFFF)
+- **Zero-duration intervals**: Intervals where start==stop are not supported (may not be queryable)
 
 ### Notes
 - Code is fully compatible with qmap v0.6.0 (updated in v1.0.0)

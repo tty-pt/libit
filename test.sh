@@ -9,4 +9,9 @@ rm -f *.qmap *.qmap.* 2>/dev/null || true
 # Run the test suite and compare output
 ./bin/test | diff expects.txt -
 
+echo "Core tests passed!"
+
+# Run extended test suite (stress tests, performance benchmarks)
+./bin/test_extended
+
 echo "All tests passed!"
