@@ -513,7 +513,7 @@ These limitations were discovered through systematic stress testing in Phase 4:
 
 ### Test Files
 - `src/test_extended.c`: 15 comprehensive extended tests (v1.2.0)
-- `src/test.c`: 54 core tests including 4 validation tests (v1.2.0)
+- `src/test.c`: 59 core tests including 4 validation tests (v1.2.0) + 5 persistence tests (v1.2.1)
 - All limitations documented with test cases demonstrating the behavior
 - Tests use SKIP markers for known limitations rather than false failures
 
@@ -584,6 +584,7 @@ LD_LIBRARY_PATH=./lib ./bin/test_extended
 
 ## Version History
 
+- **2026-02-23 (v1.2.1)**: Fixed file persistence (removed QM_MIRROR)
 - **2026-02-23 (v1.2.0)**: Fixed 4 of 5 limitations - mask increases and input validation
 - **2026-02-23 (v1.1.0)**: Initial documentation (Phase 4 extended testing)
 - **qmap b1bc322**: Current dependency version
