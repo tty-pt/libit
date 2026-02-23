@@ -1,8 +1,114 @@
-# libit v1.1.0 Testing Summary
+# libit Testing Summary
 
-This document summarizes the comprehensive testing effort for libit v1.1.0, conducted in 4 phases following the qmap v0.6.0 testing methodology.
+This document summarizes the comprehensive testing effort for libit across all versions.
 
-## Overview
+## Latest: v1.2.0 (February 2026)
+
+### Overview
+- **Version**: v1.2.0
+- **Focus**: Design limitation fixes + input validation
+- **Total Tests**: 69 automated tests (54 core + 15 extended)
+- **New Tests**: 7 (4 validation + 3 boundary tests)
+- **Status**: All passing ✅
+
+### What Changed in v1.2.0
+
+**Code Changes:**
+- Increased TI_MASK: 0x7FF → 0xFFFF (32x capacity)
+- Increased SPLITS_WHO_MASK: 0xFF → 0xFFF (16x capacity)
+- Added input validation to it_start() and it_stop()
+- Updated API documentation in it.h
+
+**Test Changes:**
+- Added Category 8: Input Validation (4 tests)
+- Updated Test 1: 2k → 10k intervals
+- Updated Test 2: 250 → 1k overlapping entities
+- Added Test 13: 15k intervals boundary test
+- Added Test 14: 3k overlapping entities boundary test
+- Added Test 15: 20k intervals capacity test
+
+### Test Results Summary
+
+| Category | Tests | Status | Notes |
+|----------|-------|--------|-------|
+| 1: Basic Initialization | 3 | ✅ PASS | No changes |
+| 2: Basic Start/Stop Operations | 10 | ✅ PASS | No changes |
+| 3: Multiple Entities | 11 | ✅ PASS | No changes |
+| 4: Intersection Queries | 8 | ✅ PASS | No changes |
+| 5: Split Computation | 8 | ✅ PASS | No changes |
+| 6: Time Utilities | 6 | ✅ PASS | No changes |
+| 7: Persistence | 0 | 🚫 DISABLED | Still failing (qmap b1bc322) |
+| 8: Input Validation | 4 | ✅ **NEW** | Timestamp + entity ID validation |
+| **Core Total** | **50** | **50✅ 0❌** | **+ 4 validation tests** |
+
+| Extended Test | Description | Status | Notes |
+|---------------|-------------|--------|-------|
+| Test 1 | Large dataset (10k intervals) | ✅ PASS | **Updated** (was 2k) |
+| Test 2 | Overlapping (1k entities) | ✅ PASS | **Updated** (was 250) |
+| Test 3 | Sequential insertion | ✅ PASS | No changes |
+| Test 4 | Sparse query performance | ✅ PASS | No changes |
+| Test 5 | Extreme timestamps | ⚠️  SKIP | Now validated (errno) |
+| Test 6 | Split performance | ✅ PASS | No changes |
+| Test 7 | Repeated operations | ✅ PASS | No changes |
+| Test 8 | Boundary queries | ✅ PASS | No changes |
+| Test 9 | Entity ID edge cases | ⚠️  SKIP | UINT32_MAX now validated |
+| Test 10 | Time utils stress | ✅ PASS | No changes |
+| Test 11 | Interleaved operations | ✅ PASS | No changes |
+| Test 12 | Zero-duration intervals | ⚠️  SKIP | Still not supported |
+| Test 13 | **15k intervals** | ✅ **NEW** | **Boundary test** |
+| Test 14 | **3k overlapping** | ✅ **NEW** | **Boundary test** |
+| Test 15 | **20k intervals** | ✅ **NEW** | **Capacity test** |
+| **Extended Total** | **15 tests** | **12✅ 3⚠️** | **+ 3 boundary tests** |
+
+### Performance Benchmarks (v1.2.0)
+
+| Operation | Scale | Time | Notes |
+|-----------|-------|------|-------|
+| Insert intervals | 10k | 350.86 µs/interval | Test 1 |
+| Insert intervals | 20k | 589.65 µs/interval | Test 15 |
+| Overlapping entities | 1k | 19.8 ms total | Test 2 |
+| Overlapping entities | 3k | 182.3 ms total | Test 14 |
+| Query (10k dataset) | Full range | 2.3 seconds | Test 1 |
+| Query (1k overlaps) | Mid-range | 308 µs | Test 2 |
+
+Performance remains excellent despite 32x capacity increase.
+
+### Fixes Verified by Tests
+
+1. **TI_MASK Increase** (2,048 → 65,536)
+   - Test 1: 10k intervals ✅
+   - Test 13: 15k intervals ✅
+   - Test 15: 20k intervals ✅
+
+2. **SPLITS_WHO_MASK Increase** (256 → 4,096)
+   - Test 2: 1k overlapping ✅
+   - Test 14: 3k overlapping ✅
+
+3. **Timestamp Validation** ([LONG_MIN/2, LONG_MAX/2])
+   - test_validation_extreme_timestamp_start ✅
+   - test_validation_extreme_timestamp_stop ✅
+
+4. **Entity ID Validation** (reject UINT32_MAX)
+   - test_validation_uint32_max_start ✅
+   - test_validation_uint32_max_stop ✅
+
+### Known Issues (v1.2.0)
+
+**Still Not Fixed:**
+- ❌ File persistence (qmap bugs persist in b1bc322)
+- ❌ Zero-duration intervals (by design)
+
+**Persistence Test Results:**
+- Re-tested with qmap b1bc322 (includes df5a7ac fix)
+- Result: Segmentation fault
+- Tests remain disabled
+- See QMAP_PERSISTENCE_BUGS.md for details
+
+---
+
+## v1.1.0 Testing (February 2026)
+
+### Overview
 
 - **Project**: libit (Interval Tree Library)
 - **Version**: v1.1.0

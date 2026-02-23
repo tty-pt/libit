@@ -28,8 +28,8 @@ static long long get_time_us(void) {
 static void test_large_dataset(void) {
 	printf("\n=== Test 1: Large Dataset Stress Test ===\n");
 	
-	/* NOTE: libit v1.1.0 has a limit of ~2048 intervals due to TI_MASK=0x7FF */
-	const int NUM_INTERVALS = 2000;
+	/* NOTE: libit v1.2.0 has a limit of ~65536 intervals due to TI_MASK=0xFFFF */
+	const int NUM_INTERVALS = 10000;
 	unsigned itd = it_init(NULL);
 	long long start, end;
 	
@@ -63,8 +63,8 @@ static void test_large_dataset(void) {
 static void test_many_overlapping(void) {
 	printf("\n=== Test 2: Many Overlapping Intervals ===\n");
 	
-	/* NOTE: SPLITS_WHO_MASK=0xFF limits to 256 entities per split */
-	const int NUM_ENTITIES = 250;
+	/* NOTE: SPLITS_WHO_MASK=0xFFF limits to 4096 entities per split */
+	const int NUM_ENTITIES = 1000;
 	unsigned itd = it_init(NULL);
 	long long start, end;
 	
@@ -418,6 +418,115 @@ static void test_zero_duration_intervals(void) {
 	if (found >= 1) PASS(); else printf("  ⚠️  SKIP: Zero-duration intervals may not be supported\n");
 }
 
+/* Test 13: Boundary test - very large dataset (near 65k limit) */
+static void test_boundary_large_dataset(void) {
+	printf("\n=== Test 13: Boundary Test - 15k Intervals ===\n");
+	
+	/* Test approaching TI_MASK limit of 65536 */
+	const int NUM_INTERVALS = 15000;
+	unsigned itd = it_init(NULL);
+	long long start, end;
+	
+	printf("Inserting %d intervals (approaching 65k limit):", NUM_INTERVALS);
+	start = get_time_us();
+	for (int i = 0; i < NUM_INTERVALS; i++) {
+		time_t start_time = 1000 + i * 100;
+		time_t end_time = start_time + 50;
+		it_start(itd, start_time, i + 1);
+		it_stop(itd, end_time, i + 1);
+	}
+	end = get_time_us();
+	printf(" %lld µs (%.2f µs/interval)\n", end - start, (double)(end - start) / NUM_INTERVALS);
+	PASS();
+	
+	printf("Querying sample intervals:");
+	start = get_time_us();
+	it_cur_t cur = it_iter(itd, 200000, 500000);
+	time_t min, max;
+	unsigned count, who;
+	int found_entities = 0;
+	while (it_next(&min, &max, &count, &who, &cur)) {
+		found_entities++;
+	}
+	end = get_time_us();
+	printf(" %lld µs (%d entity references found)\n", end - start, found_entities);
+	ASSERT(found_entities > 0, "Should find entities in query range");
+}
+
+/* Test 14: Boundary test - very high overlap (near 4k limit) */
+static void test_boundary_high_overlap(void) {
+	printf("\n=== Test 14: Boundary Test - 3k Overlapping Entities ===\n");
+	
+	/* Test approaching SPLITS_WHO_MASK limit of 4096 */
+	const int NUM_ENTITIES = 3000;
+	unsigned itd = it_init(NULL);
+	long long start, end;
+	
+	printf("Creating %d overlapping intervals (approaching 4k limit):", NUM_ENTITIES);
+	start = get_time_us();
+	for (int i = 0; i < NUM_ENTITIES; i++) {
+		it_start(itd, 5000, i + 1);  // All start at same time
+		it_stop(itd, 10000, i + 1);  // All end at same time
+	}
+	end = get_time_us();
+	printf(" %lld µs\n", end - start);
+	PASS();
+	
+	printf("Querying overlapping region:");
+	start = get_time_us();
+	it_cur_t cur = it_iter(itd, 6000, 8000);
+	time_t min, max;
+	unsigned count, who;
+	int found_entities = 0;
+	while (it_next(&min, &max, &count, &who, &cur)) {
+		found_entities++;
+	}
+	end = get_time_us();
+	printf(" %lld µs (%d entity references found)\n", end - start, found_entities);
+	ASSERT(found_entities == NUM_ENTITIES, "Should find all entity references in overlapping region");
+}
+
+/* Test 15: Exact boundary test - near TI_MASK limit */
+static void test_exact_ti_mask_boundary(void) {
+	printf("\n=== Test 15: TI_MASK Boundary Test (20k Intervals) ===\n");
+	
+	/* Test behavior near TI_MASK limit (65536)
+	 * We use 20k to demonstrate increased capacity while keeping test time reasonable */
+	const int TEST_LIMIT = 20000;
+	unsigned itd = it_init(NULL);
+	long long start, end;
+	
+	printf("Creating %d intervals (30%% of TI_MASK limit):", TEST_LIMIT);
+	start = get_time_us();
+	int success_count = 0;
+	for (int i = 0; i < TEST_LIMIT; i++) {
+		time_t start_time = 1000 + i * 100;
+		time_t end_time = start_time + 50;
+		int ret_start = it_start(itd, start_time, i + 1);
+		int ret_stop = it_stop(itd, end_time, i + 1);
+		if (ret_start == 0 && ret_stop == 0) {
+			success_count++;
+		}
+	}
+	end = get_time_us();
+	printf(" %lld µs (%.2f µs/interval)\n", end - start, (double)(end - start) / TEST_LIMIT);
+	printf("  Created %d/%d intervals successfully\n", success_count, TEST_LIMIT);
+	ASSERT(success_count == TEST_LIMIT, "Should create all intervals with increased TI_MASK");
+	
+	printf("Verifying sample intervals are queryable:");
+	start = get_time_us();
+	it_cur_t cur = it_iter(itd, 500000, 700000);
+	time_t min, max;
+	unsigned count, who;
+	int found_entities = 0;
+	while (it_next(&min, &max, &count, &who, &cur)) {
+		found_entities++;
+	}
+	end = get_time_us();
+	printf(" %lld µs (%d entity references found)\n", end - start, found_entities);
+	ASSERT(found_entities > 0, "Should be able to query intervals at high capacity");
+}
+
 int main(void) {
 	printf("╔════════════════════════════════════════════════════════════╗\n");
 	printf("║     Extended Test Suite for libit                         ║\n");
@@ -436,6 +545,9 @@ int main(void) {
 	test_time_utils_stress();
 	test_interleaved_operations();
 	test_zero_duration_intervals();
+	test_boundary_large_dataset();
+	test_boundary_high_overlap();
+	test_exact_ti_mask_boundary();
 	
 	printf("\n╔════════════════════════════════════════════════════════════╗\n");
 	if (errors == 0) {

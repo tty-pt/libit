@@ -109,11 +109,17 @@ void it_close(unsigned itd);
  *
  * @param[in] itd Database handle from it_init().
  * @param[in] ts  Timestamp when the interval begins.
+ *               Must be in range [LONG_MIN/2, LONG_MAX/2] to avoid
+ *               conflicts with internal sentinel values.
  * @param[in] id  Entity identifier (e.g., user ID, session ID).
+ *               Cannot be UINT32_MAX (reserved as internal sentinel).
  *
  * @return 0 on success (new interval started).
  *         1 if entity already has an open interval at this time
  *         (duplicate start attempt).
+ *         -1 on validation error (check errno):
+ *           - ERANGE: timestamp outside valid range
+ *           - EINVAL: entity ID is UINT32_MAX
  *
  * @note If an entity already has an open interval, this function
  *       returns 1 and does not create a duplicate.
@@ -133,10 +139,16 @@ int it_start(unsigned itd, time_t ts, unsigned id);
  *
  * @param[in] itd Database handle from it_init().
  * @param[in] ts  Timestamp when the interval ends.
+ *               Must be in range [LONG_MIN/2, LONG_MAX/2] to avoid
+ *               conflicts with internal sentinel values.
  * @param[in] id  Entity identifier.
+ *               Cannot be UINT32_MAX (reserved as internal sentinel).
  *
  * @return 0 on success (existing interval closed).
  *         1 if no open interval existed (created backward interval).
+ *         -1 on validation error (check errno):
+ *           - ERANGE: timestamp outside valid range
+ *           - EINVAL: entity ID is UINT32_MAX
  *
  * @note This function handles the case where stop is called
  *       before start by creating an interval from -infinity.

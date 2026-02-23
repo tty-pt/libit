@@ -5,6 +5,9 @@
 #include <assert.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <errno.h>
+#include <limits.h>
+#include <stdint.h>
 
 #include <ttypt/qsys.h>
 
@@ -1012,6 +1015,52 @@ TEST(persist_large_dataset) {
 }
 
 /* ============================================
+ * Category 8: Input Validation
+ * ============================================ */
+
+TEST(validation_extreme_timestamp_start) {
+	unsigned itd = it_init(NULL);
+	
+	/* Test timestamp beyond valid range (> LONG_MAX/2) in it_start */
+	time_t extreme_ts = LONG_MAX / 2 + 1;
+	int result = it_start(itd, extreme_ts, 1);
+	
+	ASSERT(result == -1);
+	ASSERT(errno == ERANGE);
+}
+
+TEST(validation_extreme_timestamp_stop) {
+	unsigned itd = it_init(NULL);
+	
+	/* Test timestamp beyond valid range (> LONG_MAX/2) in it_stop */
+	time_t extreme_ts = LONG_MAX / 2 + 1;
+	int result = it_stop(itd, extreme_ts, 1);
+	
+	ASSERT(result == -1);
+	ASSERT(errno == ERANGE);
+}
+
+TEST(validation_uint32_max_start) {
+	unsigned itd = it_init(NULL);
+	
+	/* Test UINT32_MAX entity ID (reserved as IDM_MISS sentinel) in it_start */
+	int result = it_start(itd, 1000, UINT32_MAX);
+	
+	ASSERT(result == -1);
+	ASSERT(errno == EINVAL);
+}
+
+TEST(validation_uint32_max_stop) {
+	unsigned itd = it_init(NULL);
+	
+	/* Test UINT32_MAX entity ID (reserved as IDM_MISS sentinel) in it_stop */
+	int result = it_stop(itd, 1000, UINT32_MAX);
+	
+	ASSERT(result == -1);
+	ASSERT(errno == EINVAL);
+}
+
+/* ============================================
  * Main test runner
  * ============================================ */
 
@@ -1084,14 +1133,24 @@ int main(void) {
 	
 	/* Category 7: Persistence */
 	printf("\n=== Category 7: Persistence ===\n");
-	/* TEMPORARILY DISABLED due to qmap bug with QM_MIRROR
+	/* DISABLED: Persistence tests cause segmentation fault with qmap b1bc322
+	 * Tested 2026-02-23 with qmap version b1bc322 (includes df5a7ac fix)
+	 * Bugs still present - keeping tests disabled pending upstream qmap fixes
+	 * See QMAP_PERSISTENCE_BUGS.md for details
 	RUN_TEST(persist_save_load);
 	RUN_TEST(persist_multiple_intervals);
 	RUN_TEST(persist_empty_database);
 	RUN_TEST(persist_append);
 	RUN_TEST(persist_large_dataset);
 	*/
-	printf("SKIPPED: Persistence tests disabled due to qmap bug\n");
+	printf("SKIPPED: Persistence tests disabled (qmap bugs persist as of b1bc322)\n");
+	
+	/* Category 8: Input Validation */
+	printf("\n=== Category 8: Input Validation ===\n");
+	RUN_TEST(validation_extreme_timestamp_start);
+	RUN_TEST(validation_extreme_timestamp_stop);
+	RUN_TEST(validation_uint32_max_start);
+	RUN_TEST(validation_uint32_max_stop);
 	
 	printf("\n=== Test Summary ===\n");
 	printf("Total errors: %u\n", errors);

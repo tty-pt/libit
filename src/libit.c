@@ -24,8 +24,8 @@
 #endif
 
 #define TI_DBS_MAX 512
-#define SPLITS_WHO_MASK 0xFF
-#define TI_MASK 0x7FF
+#define SPLITS_WHO_MASK 0xFFF
+#define TI_MASK 0xFFFF
 
 enum cflags {
 	IT_AHEAD = 1, // first element
@@ -547,6 +547,18 @@ it_stop(uint32_t itd, time_t ts, uint32_t id)
 {
 	struct tidbs *tidbs = &ti_dbs[itd];
 
+	/* Validate timestamp range to avoid conflicts with sentinels */
+	if (ts < TS_MIN / 2 || ts > TS_MAX / 2) {
+		errno = ERANGE;
+		return -1;
+	}
+
+	/* Validate entity ID - UINT32_MAX is reserved as IDM_MISS sentinel */
+	if (id == UINT32_MAX) {
+		errno = EINVAL;
+		return -1;
+	}
+
 	if (!ti_present(tidbs, ts, id)) {
 		ti_insert(tidbs, id, mtinf, ts);
 		return 1;
@@ -560,6 +572,18 @@ int
 it_start(uint32_t itd, time_t ts, uint32_t id)
 {
 	struct tidbs *tidbs = &ti_dbs[itd];
+
+	/* Validate timestamp range to avoid conflicts with sentinels */
+	if (ts < TS_MIN / 2 || ts > TS_MAX / 2) {
+		errno = ERANGE;
+		return -1;
+	}
+
+	/* Validate entity ID - UINT32_MAX is reserved as IDM_MISS sentinel */
+	if (id == UINT32_MAX) {
+		errno = EINVAL;
+		return -1;
+	}
 
 	if (ti_present(tidbs, ts, id))
 		return 1;

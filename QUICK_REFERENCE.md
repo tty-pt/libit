@@ -1,6 +1,15 @@
-# libit v1.1.0 Quick Reference
+# libit v1.2.0 Quick Reference
 
 A quick reference guide for developers using libit (Interval Tree Library).
+
+## What's New in v1.2.0
+
+✅ **32x more intervals:** 2,048 → 65,536 per database  
+✅ **16x more overlaps:** 256 → 4,096 entities per split  
+✅ **Input validation:** Automatic error detection with errno  
+✅ **Better docs:** Updated API documentation
+
+See CHANGELOG.md for complete details.
 
 ## Installation & Building
 
@@ -32,7 +41,12 @@ unsigned itd = it_init("mydata.qmap");
 ### Record Intervals
 ```c
 // Entity 1 active from time 1000 to 2000
-it_start(itd, 1000, 1);
+int ret = it_start(itd, 1000, 1);
+if (ret == -1) {
+    // Validation error (v1.2.0+)
+    if (errno == ERANGE) perror("Timestamp out of range");
+    if (errno == EINVAL) perror("Invalid entity ID");
+}
 it_stop(itd, 2000, 1);
 
 // Entity 2 active from time 1500 to 2500 (overlaps entity 1)
@@ -76,34 +90,60 @@ it_close(itd);
 
 ## Important Limits
 
-⚠️ **Know these limits before using libit:**
+📊 **Increased limits in v1.2.0:**
 
-| Limit | Value | What It Means |
-|-------|-------|---------------|
-| **Max intervals** | ~2048 | Per database instance (TI_MASK) |
-| **Max overlapping entities** | 256 | Per time period (SPLITS_WHO_MASK) |
-| **Max entity ID** | 4,294,967,294 | Cannot use UINT32_MAX (0xFFFFFFFF) |
-| **Timestamp range** | ±reasonable | Avoid INT64_MAX/INT64_MIN |
-| **Min interval duration** | 1 | Zero-duration intervals not supported |
+| Limit | v1.1.0 | v1.2.0 | What It Means |
+|-------|--------|--------|---------------|
+| **Max intervals** | ~2,048 | **65,536** | Per database instance (TI_MASK) |
+| **Max overlapping entities** | 256 | **4,096** | Per time period (SPLITS_WHO_MASK) |
+| **Max entity ID** | 4,294,967,294 | 4,294,967,294 | Cannot use UINT32_MAX (validated) |
+| **Timestamp range** | Unchecked | **[LONG_MIN/2, LONG_MAX/2]** | Validated (errno=ERANGE) |
+| **Min interval duration** | 1 | 1 | Zero-duration intervals not supported |
+
+### Error Handling (v1.2.0+)
+
+**it_start() and it_stop() return values:**
+- `0` = Success
+- `1` = Duplicate start (it_start) or no open interval (it_stop)
+- `-1` = **Validation error** (check errno)
+
+**errno values:**
+- `ERANGE` = Timestamp outside valid range [LONG_MIN/2, LONG_MAX/2]
+- `EINVAL` = Entity ID is UINT32_MAX (reserved sentinel)
+
+**Example:**
+```c
+#include <errno.h>
+
+if (it_start(itd, timestamp, entity_id) == -1) {
+    if (errno == ERANGE) {
+        fprintf(stderr, "Timestamp %ld out of range\n", timestamp);
+    } else if (errno == EINVAL) {
+        fprintf(stderr, "Entity ID %u is reserved\n", entity_id);
+    }
+    return -1;
+}
+```
 
 ### Workarounds
 
-**Too many intervals?**
+**Too many intervals? (v1.2.0: Much higher limit!)**
 ```c
-// Use multiple database instances
-unsigned itd1 = it_init(NULL);  // First 2000 intervals
-unsigned itd2 = it_init(NULL);  // Next 2000 intervals
+// v1.2.0: Can now handle up to 65,536 intervals per database
+// Only need multiple databases if exceeding this:
+unsigned itd1 = it_init(NULL);  // First 65k intervals
+unsigned itd2 = it_init(NULL);  // Next 65k intervals (if needed)
 ```
 
-**Too many overlaps?**
+**Too many overlaps? (v1.2.0: 16x increase!)**
 ```c
-// Design to minimize concurrent entities
-// Or limit to 250 entities per time period
+// v1.2.0: Can now handle up to 4,096 overlapping entities
+// Only an issue if more than 4,000 entities overlap simultaneously
 ```
 
 **Need point events?**
 ```c
-// DON'T: it_start(itd, t, id); it_stop(itd, t, id);
+// DON'T: it_start(itd, t, id); it_stop(itd, t, id);  // Zero-duration
 // DO:
 it_start(itd, t, id);
 it_stop(itd, t + 1, id);  // Minimum duration of 1
@@ -111,20 +151,29 @@ it_stop(itd, t + 1, id);  // Minimum duration of 1
 
 ## Known Issues
 
-### ❌ File Persistence NOT WORKING
+### ❌ File Persistence NOT WORKING (Still in v1.2.0)
 ```c
-// This DOES NOT work in v1.1.0:
+// This DOES NOT work:
 unsigned itd = it_init("data.qmap");
 // ... operations ...
 it_close(itd);
 // Data is NOT saved!
 ```
 
-**Reason**: Critical bugs in qmap v0.6.0 (see QMAP_PERSISTENCE_BUGS.md)
+**Reason**: Critical bugs in qmap (tested with b1bc322, still failing)
 
 **Workaround**: Use in-memory databases only until qmap is fixed
 
-### ⚠️ Design Limitations
+### ✅ Design Limitations (Most Fixed in v1.2.0!)
+
+**Fixed in v1.2.0:**
+- ✅ TI_MASK limit: 2,048 → 65,536 intervals
+- ✅ SPLITS_WHO_MASK limit: 256 → 4,096 entities
+- ✅ Extreme timestamps: Now validated
+- ✅ UINT32_MAX entity ID: Now validated
+
+**Still not supported:**
+- ❌ Zero-duration intervals (start == stop) - by design
 
 See `LIBIT_LIMITATIONS.md` for detailed explanations.
 

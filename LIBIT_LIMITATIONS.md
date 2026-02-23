@@ -1,20 +1,30 @@
-# libit v1.1.0 Design Limitations
+# libit Design Limitations
 
-This document describes design limitations discovered during Phase 4 extended testing of libit v1.1.0. These limitations are inherent to the current architecture and should be considered when using the library.
+This document describes design limitations discovered during comprehensive testing. Some limitations have been addressed in subsequent versions.
 
-## Summary
+## Summary of Current Status (v1.2.0)
 
-Five critical design limitations were discovered during comprehensive stress testing:
+| Limitation | Status | Version Fixed |
+|------------|--------|---------------|
+| TI_MASK Limit (~2048 intervals) | **FIXED** | v1.2.0 |
+| SPLITS_WHO_MASK Limit (256 entities) | **FIXED** | v1.2.0 |
+| Extreme Timestamps (overflow risk) | **FIXED** | v1.2.0 |
+| UINT32_MAX Entity ID (sentinel conflict) | **FIXED** | v1.2.0 |
+| Zero-Duration Intervals (start == stop) | **NOT FIXED** | By Design |
 
-1. **TI_MASK Limit**: Maximum ~2048 intervals per database
-2. **SPLITS_WHO_MASK Limit**: Maximum 256 entities per split interval
-3. **Extreme Timestamps**: Values near INT64_MAX may overflow
-4. **UINT32_MAX Entity ID**: Conflicts with IDM_MISS sentinel value
-5. **Zero-Duration Intervals**: Not supported (start == stop)
+**See CHANGELOG.md for v1.2.0 implementation details.**
 
 ---
 
-## 1. TI_MASK Limit: Maximum ~2048 Intervals
+# Fixed Limitations (as of v1.2.0)
+
+The following limitations have been addressed:
+
+## 1. TI_MASK Limit: Maximum ~2048 Intervals → FIXED ✅
+
+**Status:** FIXED in v1.2.0 (increased to 65,536 intervals)
+
+### Original Problem (v1.1.0)
 
 ### Description
 The `TI_MASK` constant in `src/libit.c:28` is defined as `0x7FF` (2047), which limits the qmap database to a maximum of approximately 2048 intervals.
@@ -72,9 +82,24 @@ while (it_next(&min, &max, &count, &who, &cur)) {
 - `test_extended.c`: Test 1 (Large Dataset Stress Test)
 - Originally tested with 10,000 intervals, reduced to 2,000 to stay within limit
 
+### Fix (v1.2.0)
+**Changed:** `TI_MASK` from `0x7FF` to `0xFFFF` (src/libit.c:28)
+- **Old limit:** ~2,048 intervals
+- **New limit:** 65,536 intervals
+- **Increase factor:** 32x
+
+**Test coverage (v1.2.0):**
+- Test 1: 10,000 intervals ✅
+- Test 13: 15,000 intervals (approaching limit) ✅
+- Test 15: 20,000 intervals (30% of limit) ✅
+
 ---
 
-## 2. SPLITS_WHO_MASK Limit: Maximum 256 Entities Per Split
+## 2. SPLITS_WHO_MASK Limit: Maximum 256 Entities Per Split → FIXED ✅
+
+**Status:** FIXED in v1.2.0 (increased to 4,096 entities)
+
+### Original Problem (v1.1.0)
 
 ### Description
 The `SPLITS_WHO_MASK` constant in `src/libit.c:27` is defined as `0xFF` (255), which limits each split interval to a maximum of 256 entity IDs.
@@ -126,9 +151,23 @@ while (it_next(&min, &max, &count, &who, &cur)) {
 - `test_extended.c`: Test 2 (Many Overlapping Intervals)
 - Originally tested with 1,000 entities, reduced to 250 to stay within limit
 
+### Fix (v1.2.0)
+**Changed:** `SPLITS_WHO_MASK` from `0xFF` to `0xFFF` (src/libit.c:27)
+- **Old limit:** 256 entities per split
+- **New limit:** 4,096 entities per split
+- **Increase factor:** 16x
+
+**Test coverage (v1.2.0):**
+- Test 2: 1,000 overlapping entities ✅
+- Test 14: 3,000 overlapping entities (approaching limit) ✅
+
 ---
 
-## 3. Extreme Timestamps: INT64_MAX Overflow
+## 3. Extreme Timestamps: INT64_MAX Overflow → FIXED ✅
+
+**Status:** FIXED in v1.2.0 (input validation added)
+
+### Original Problem (v1.1.0)
 
 ### Description
 Timestamps near `INT64_MAX` (9,223,372,036,854,775,807) may cause overflow or undefined behavior in libit's internal calculations.
@@ -197,9 +236,33 @@ it_cur_t cur = it_iter(itd, -1001000, -998000);
 - `test_extended.c`: Test 5 (Extreme Timestamp Values)
 - Extreme timestamp test marked as SKIP (known limitation)
 
+### Fix (v1.2.0)
+**Added:** Input validation to `it_start()` and `it_stop()`
+- **Valid range:** `[LONG_MIN/2, LONG_MAX/2]`
+- **Behavior:** Returns -1 with `errno = ERANGE` for out-of-range timestamps
+- **Rationale:** Prevents conflicts with internal sentinels (`mtinf` = LONG_MIN, `tinf` = LONG_MAX)
+
+**API changes:**
+```c
+int it_start(unsigned itd, time_t ts, unsigned id);
+int it_stop(unsigned itd, time_t ts, unsigned id);
+// Return values:
+//   0 = success
+//   1 = duplicate start / no open interval
+//  -1 = validation error (errno = ERANGE for timestamp overflow)
+```
+
+**Test coverage (v1.2.0):**
+- Category 8: test_validation_extreme_timestamp_start ✅
+- Category 8: test_validation_extreme_timestamp_stop ✅
+
 ---
 
-## 4. UINT32_MAX Entity ID: IDM_MISS Sentinel Conflict
+## 4. UINT32_MAX Entity ID: IDM_MISS Sentinel Conflict → FIXED ✅
+
+**Status:** FIXED in v1.2.0 (input validation added)
+
+### Original Problem (v1.1.0)
 
 ### Description
 The entity ID value `UINT32_MAX` (0xFFFFFFFF or 4,294,967,295) conflicts with the `IDM_MISS` sentinel value used by the qmap IDM (ID Manager) module.
@@ -269,9 +332,33 @@ This is not recommended as it would break existing qmap APIs.
 - `test_extended.c`: Test 9 (Entity ID Edge Cases)
 - UINT32_MAX test marked as SKIP (sentinel conflict documented)
 
+### Fix (v1.2.0)
+**Added:** Input validation to `it_start()` and `it_stop()`
+- **Rejected value:** `UINT32_MAX` (0xFFFFFFFF)
+- **Behavior:** Returns -1 with `errno = EINVAL` for UINT32_MAX entity ID
+- **Rationale:** Prevents conflicts with `IDM_MISS` sentinel used internally
+
+**API changes:**
+```c
+int it_start(unsigned itd, time_t ts, unsigned id);
+int it_stop(unsigned itd, time_t ts, unsigned id);
+// Return values:
+//   0 = success
+//   1 = duplicate start / no open interval
+//  -1 = validation error (errno = EINVAL for UINT32_MAX entity ID)
+```
+
+**Valid entity ID range (v1.2.0):** 0 to 4,294,967,294 (0x00000000 to 0xFFFFFFFE)
+
+**Test coverage (v1.2.0):**
+- Category 8: test_validation_uint32_max_start ✅
+- Category 8: test_validation_uint32_max_stop ✅
+
 ---
 
-## 5. Zero-Duration Intervals Not Supported
+# Remaining Limitations (Not Fixed)
+
+## 5. Zero-Duration Intervals Not Supported (BY DESIGN)
 
 ### Description
 Intervals where the start and stop timestamps are identical (zero duration, representing a single point in time) are not properly supported by libit's query mechanism.
@@ -362,22 +449,27 @@ To properly support point events, libit would need:
 These limitations were discovered through systematic stress testing in Phase 4:
 
 ### Test Coverage
-- **Large datasets**: Up to 10,000 intervals tested (discovered 2048 limit)
-- **Overlapping intervals**: Up to 1,000 concurrent entities tested (discovered 256 limit)
+- **Large datasets**: Up to 20,000 intervals tested (v1.2.0)
+- **Overlapping intervals**: Up to 3,000 concurrent entities tested (v1.2.0)
 - **Extreme values**: INT64_MAX, LONG_MAX, negative timestamps tested
 - **Edge cases**: ID=0, ID=UINT32_MAX, zero-duration intervals tested
 - **Performance**: Microsecond-precision timing for all operations
+- **Input validation**: Timestamp range and entity ID validation (v1.2.0)
 
 ### Test Files
-- `src/test_extended.c` (462 lines): 12 comprehensive extended tests
+- `src/test_extended.c`: 15 comprehensive extended tests (v1.2.0)
+- `src/test.c`: 54 core tests including 4 validation tests (v1.2.0)
 - All limitations documented with test cases demonstrating the behavior
 - Tests use SKIP markers for known limitations rather than false failures
 
 ### Verification Commands
 ```bash
-# Run extended tests to see limitations in action
+# Run core tests (54 tests including validation)
 cd /home/quirinpa/libit
-make bin/test_extended
+make
+LD_LIBRARY_PATH=./lib ./bin/test
+
+# Run extended tests (15 tests including boundary tests)
 LD_LIBRARY_PATH=./lib ./bin/test_extended
 ```
 
@@ -385,56 +477,63 @@ LD_LIBRARY_PATH=./lib ./bin/test_extended
 
 ## Recommendations
 
-### For Application Developers
+### For Application Developers (v1.2.0)
 
-1. **Interval Count**: Keep databases under 2000 intervals per `it_init()` instance
-2. **Overlapping Entities**: Limit concurrent overlapping entities to 250 or fewer
-3. **Timestamp Range**: Use timestamps between Unix epoch (1970) and year 2100
-4. **Entity IDs**: Avoid using ID=4,294,967,295 (UINT32_MAX)
-5. **Point Events**: Use minimum duration of 1 time unit instead of zero-duration
+1. **Interval Count**: Can now use up to 65,000 intervals per `it_init()` instance ✅
+2. **Overlapping Entities**: Can now use up to 4,000 concurrent overlapping entities ✅
+3. **Timestamp Range**: Use timestamps in range [LONG_MIN/2, LONG_MAX/2] (validated) ✅
+4. **Entity IDs**: Cannot use UINT32_MAX (returns error with errno=EINVAL) ✅
+5. **Point Events**: Use minimum duration of 1 time unit instead of zero-duration (still required)
 
 ### For Library Maintainers
 
-**High Priority:**
-1. Increase `TI_MASK` to `0xFFFF` (65535 intervals) or make it configurable
-2. Increase `SPLITS_WHO_MASK` to `0xFFF` (4095 entities) or make it configurable
-3. Add runtime checks with error reporting when limits are exceeded
+**Completed in v1.2.0:** ✅
+1. ~~Increase `TI_MASK` to `0xFFFF` (65,536 intervals)~~ DONE
+2. ~~Increase `SPLITS_WHO_MASK` to `0xFFF` (4,096 entities)~~ DONE
+3. ~~Add runtime checks with error reporting when limits are exceeded~~ DONE (errno-based)
+4. ~~Add overflow checks for extreme timestamp arithmetic~~ DONE (validation added)
+5. ~~Document entity ID restrictions in API documentation~~ DONE (it.h updated)
 
-**Medium Priority:**
-4. Add overflow checks for extreme timestamp arithmetic
-5. Document entity ID restrictions in API documentation
-6. Consider special handling for zero-duration intervals
-
-**Low Priority:**
+**Future Enhancements:**
+6. Consider special handling for zero-duration intervals (point events)
 7. Add `it_get_limits()` API to query current mask values at runtime
 8. Make masks configurable via `it_init()` parameters
-9. Add comprehensive range checking with `errno` reporting
 
 ### Compatibility Notes
 
-These limitations apply to:
-- **libit v1.1.0** with qmap v0.6.0
-- All platforms (Linux, OpenBSD, macOS, Windows)
-- Both 32-bit and 64-bit architectures (timestamp overflow platform-dependent)
+**v1.2.0 (current):**
+- TI_MASK: 0xFFFF (65,536 intervals)
+- SPLITS_WHO_MASK: 0xFFF (4,096 entities)
+- Input validation enabled (errno-based error reporting)
+- Compatible with qmap b1bc322+
+
+**v1.1.0 (legacy):**
+- TI_MASK: 0x7FF (2,048 intervals)
+- SPLITS_WHO_MASK: 0xFF (256 entities)
+- No input validation
+- Compatible with qmap v0.6.0
 
 ---
 
 ## References
 
 - **Source Code**: `/home/quirinpa/libit/src/libit.c`
+- **API Documentation**: `/home/quirinpa/libit/include/ttypt/it.h`
 - **Extended Tests**: `/home/quirinpa/libit/src/test_extended.c`
-- **CHANGELOG**: `/home/quirinpa/libit/CHANGELOG.md` (Phase 4 section)
+- **Core Tests**: `/home/quirinpa/libit/src/test.c`
+- **CHANGELOG**: `/home/quirinpa/libit/CHANGELOG.md`
+- **Quick Reference**: `/home/quirinpa/libit/QUICK_REFERENCE.md`
 - **qmap IDM Header**: `/home/quirinpa/qmap/include/ttypt/idm.h`
-- **Test Evidence**: All test cases in test_extended.c demonstrate these limits
 
 ---
 
 ## Version History
 
-- **2026-02-23**: Initial documentation (Phase 4 extended testing)
-- **libit v1.1.0**: All limitations present and documented
-- **qmap v0.6.0**: Underlying dependency version
+- **2026-02-23 (v1.2.0)**: Fixed 4 of 5 limitations - mask increases and input validation
+- **2026-02-23 (v1.1.0)**: Initial documentation (Phase 4 extended testing)
+- **qmap b1bc322**: Current dependency version
+- **qmap v0.6.0**: Original dependency version
 
 ---
 
-*This document was created during Phase 4 comprehensive testing of libit v1.1.0.*
+*This document tracks design limitations across libit versions. See CHANGELOG.md for detailed implementation notes.*

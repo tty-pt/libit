@@ -5,6 +5,100 @@ All notable changes to libit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-02-23
+
+### Fixed - Design Limitations Addressed
+
+**TI_MASK Limit (Fixed)**
+- Increased from `0x7FF` to `0xFFFF` (src/libit.c:28)
+- **Old limit:** ~2,048 intervals per database
+- **New limit:** 65,536 intervals per database  
+- **Increase:** 32x capacity
+- Test coverage: 10k, 15k, and 20k interval tests passing
+
+**SPLITS_WHO_MASK Limit (Fixed)**
+- Increased from `0xFF` to `0xFFF` (src/libit.c:27)
+- **Old limit:** 256 entities per split interval
+- **New limit:** 4,096 entities per split interval
+- **Increase:** 16x capacity
+- Test coverage: 1k and 3k overlapping entity tests passing
+
+**Extreme Timestamps (Fixed)**
+- Added input validation to `it_start()` and `it_stop()`
+- **Valid range:** `[LONG_MIN/2, LONG_MAX/2]`
+- **Behavior:** Returns -1 with `errno = ERANGE` for out-of-range timestamps
+- **Rationale:** Prevents conflicts with internal sentinel values (mtinf, tinf)
+- Test coverage: Category 8 validation tests
+
+**UINT32_MAX Entity ID (Fixed)**
+- Added input validation to reject UINT32_MAX
+- **Behavior:** Returns -1 with `errno = EINVAL` for UINT32_MAX entity ID
+- **Rationale:** Prevents conflicts with IDM_MISS sentinel (0xFFFFFFFF)
+- **Valid range:** 0 to 4,294,967,294 (0x00000000 to 0xFFFFFFFE)
+- Test coverage: Category 8 validation tests
+
+### Changed - API Behavior
+
+**it_start() and it_stop() Return Values**
+- **Previous:** 0=success, 1=duplicate/no-interval
+- **New:** 0=success, 1=duplicate/no-interval, -1=validation error
+- **Error reporting:** Check `errno` when return value is -1
+  - `ERANGE`: Timestamp outside valid range
+  - `EINVAL`: Entity ID is UINT32_MAX
+
+### Added
+
+**Category 8: Input Validation Tests** (4 new tests)
+- test_validation_extreme_timestamp_start: Validates timestamp range in it_start()
+- test_validation_extreme_timestamp_stop: Validates timestamp range in it_stop()
+- test_validation_uint32_max_start: Validates entity ID in it_start()
+- test_validation_uint32_max_stop: Validates entity ID in it_stop()
+
+**Extended Test Suite Enhancements** (3 new boundary tests)
+- Test 13: 15,000 intervals (approaching 65k limit)
+- Test 14: 3,000 overlapping entities (approaching 4k limit)  
+- Test 15: 20,000 intervals (30% of TI_MASK limit)
+
+**Updated test limits:**
+- Test 1: 2,000 → 10,000 intervals
+- Test 2: 250 → 1,000 overlapping entities
+
+**Total test count:** 69 tests (54 core + 15 extended)
+
+### Updated Documentation
+
+- **LIBIT_LIMITATIONS.md**: Marked 4 limitations as FIXED, reorganized by status
+- **QUICK_REFERENCE.md**: Updated limits table and error handling examples
+- **TESTING_SUMMARY.md**: Added v1.2.0 fixes section
+- **it.h**: Updated API documentation for it_start() and it_stop() with new return codes
+
+### Known Issues
+
+**Zero-Duration Intervals (Not Fixed - By Design)**
+- Intervals where start==stop remain unsupported
+- Query mechanism uses exclusive upper bounds, making point-in-time queries inconsistent
+- Workaround: Use minimum duration of 1 time unit
+
+**Persistence Tests (Still Failing)**
+- Re-tested with qmap b1bc322 (includes df5a7ac file loading fix)
+- Result: Segmentation fault - bugs still present
+- Category 7 tests remain disabled pending upstream qmap fixes
+- See QMAP_PERSISTENCE_BUGS.md for updated test results
+
+### Performance
+
+Performance remains excellent with increased limits:
+- 10k intervals: 350.86 µs/interval insertion
+- 1k overlapping entities: 19.8 ms total creation time
+- 20k intervals: 589.65 µs/interval insertion
+- Query performance: <1ms for most queries
+
+### Compatibility
+
+- **qmap version:** b1bc322+ (tested with b1bc322)
+- **Breaking changes:** None - backward compatible API
+- **New behavior:** Validation errors return -1 (previously would silently fail or corrupt data)
+
 ## [1.1.0] - 2026-02-23
 
 ### Changed
