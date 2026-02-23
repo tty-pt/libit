@@ -395,6 +395,391 @@ TEST(large_entity_id) {
 }
 
 /* ============================================
+ * Category 4: Intersection Queries (it_iter + it_next)
+ * ============================================ */
+
+TEST(iter_empty_range) {
+	unsigned itd = it_init(NULL);
+	
+	/* Add interval outside query range */
+	it_start(itd, 1000, 1);
+	it_stop(itd, 2000, 1);
+	
+	/* Query range that doesn't intersect */
+	it_cur_t cur = it_iter(itd, 3000, 4000);
+	time_t min, max;
+	unsigned count, who;
+	
+	int has_results = it_next(&min, &max, &count, &who, &cur);
+	ASSERT_EQ(has_results, 0); /* Should be empty */
+}
+
+TEST(iter_single_interval) {
+	unsigned itd = it_init(NULL);
+	
+	/* Single interval fully in range */
+	it_start(itd, 1000, 42);
+	it_stop(itd, 2000, 42);
+	
+	/* Query covering the interval */
+	it_cur_t cur = it_iter(itd, 500, 2500);
+	time_t min, max;
+	unsigned count, who;
+	
+	int ret = it_next(&min, &max, &count, &who, &cur);
+	ASSERT_EQ(ret, 1);
+	ASSERT_EQ(min, 1000);
+	ASSERT_EQ(max, 2000);
+	ASSERT_EQ(count, 1);
+	ASSERT_EQ(who, 42);
+	
+	/* Should be no more results */
+	ret = it_next(&min, &max, &count, &who, &cur);
+	ASSERT_EQ(ret, 0);
+}
+
+TEST(iter_partial_overlap) {
+	unsigned itd = it_init(NULL);
+	
+	/* Interval extends beyond query range */
+	it_start(itd, 1000, 5);
+	it_stop(itd, 3000, 5);
+	
+	/* Query only part of the interval */
+	it_cur_t cur = it_iter(itd, 1500, 2500);
+	time_t min, max;
+	unsigned count, who;
+	
+	int ret = it_next(&min, &max, &count, &who, &cur);
+	ASSERT_EQ(ret, 1);
+	/* Should get the intersection portion */
+	ASSERT_EQ(min, 1500);
+	ASSERT_EQ(max, 2500);
+	ASSERT_EQ(who, 5);
+}
+
+TEST(iter_multiple_non_overlapping) {
+	unsigned itd = it_init(NULL);
+	
+	/* Three separate intervals */
+	it_start(itd, 1000, 1);
+	it_stop(itd, 1500, 1);
+	
+	it_start(itd, 2000, 2);
+	it_stop(itd, 2500, 2);
+	
+	it_start(itd, 3000, 3);
+	it_stop(itd, 3500, 3);
+	
+	/* Query covering all three */
+	it_cur_t cur = it_iter(itd, 900, 3600);
+	time_t min, max;
+	unsigned count, who;
+	int found_count = 0;
+	
+	while (it_next(&min, &max, &count, &who, &cur)) {
+		found_count++;
+		ASSERT(count == 1); /* Each segment has only one entity */
+	}
+	
+	ASSERT_EQ(found_count, 3); /* Should find all three entities */
+}
+
+TEST(iter_exact_boundaries) {
+	unsigned itd = it_init(NULL);
+	
+	/* Interval exactly matches query range */
+	it_start(itd, 1000, 99);
+	it_stop(itd, 2000, 99);
+	
+	/* Query with exact same boundaries */
+	it_cur_t cur = it_iter(itd, 1000, 2000);
+	time_t min, max;
+	unsigned count, who;
+	
+	int ret = it_next(&min, &max, &count, &who, &cur);
+	ASSERT_EQ(ret, 1);
+	ASSERT_EQ(min, 1000);
+	ASSERT_EQ(max, 2000);
+	ASSERT_EQ(who, 99);
+}
+
+TEST(iter_before_range) {
+	unsigned itd = it_init(NULL);
+	
+	/* Intervals completely before query range */
+	it_start(itd, 100, 1);
+	it_stop(itd, 200, 1);
+	it_start(itd, 300, 2);
+	it_stop(itd, 400, 2);
+	
+	/* Query after all intervals */
+	it_cur_t cur = it_iter(itd, 1000, 2000);
+	time_t min, max;
+	unsigned count, who;
+	
+	int ret = it_next(&min, &max, &count, &who, &cur);
+	ASSERT_EQ(ret, 0); /* Should be empty */
+}
+
+TEST(iter_after_range) {
+	unsigned itd = it_init(NULL);
+	
+	/* Intervals completely after query range */
+	it_start(itd, 5000, 1);
+	it_stop(itd, 6000, 1);
+	
+	/* Query before all intervals */
+	it_cur_t cur = it_iter(itd, 1000, 2000);
+	time_t min, max;
+	unsigned count, who;
+	
+	int ret = it_next(&min, &max, &count, &who, &cur);
+	ASSERT_EQ(ret, 0); /* Should be empty */
+}
+
+TEST(iter_same_entity_multiple_intervals) {
+	unsigned itd = it_init(NULL);
+	
+	/* Same entity with two separate intervals */
+	it_start(itd, 1000, 7);
+	it_stop(itd, 1500, 7);
+	
+	it_start(itd, 2000, 7);
+	it_stop(itd, 2500, 7);
+	
+	/* Query covering both intervals */
+	it_cur_t cur = it_iter(itd, 900, 2600);
+	time_t min, max;
+	unsigned count, who;
+	int found_count = 0;
+	
+	while (it_next(&min, &max, &count, &who, &cur)) {
+		ASSERT_EQ(who, 7); /* Always entity 7 */
+		found_count++;
+	}
+	
+	ASSERT_EQ(found_count, 2); /* Should find both intervals */
+}
+
+/* ============================================
+ * Category 5: Split Computation Tests
+ * ============================================ */
+
+/* Test: Single entity present throughout range - should create one split */
+TEST(split_single_entity_full_range) {
+	unsigned itd = it_init(NULL);
+	it_cur_t cur;
+	time_t min, max;
+	unsigned count, who;
+	int split_count;
+	
+	it_start(itd, 1000, 1);
+	it_stop(itd, 3000, 1);
+	
+	cur = it_iter(itd, 1000, 3000);
+	split_count = 0;
+	
+	while (it_next(&min, &max, &count, &who, &cur)) {
+		split_count++;
+		ASSERT_EQ(who, 1);
+		ASSERT_EQ(count, 1);
+		ASSERT_EQ(min, 1000);
+		ASSERT_EQ(max, 3000);
+	}
+	
+	ASSERT_EQ(split_count, 1); /* Should have exactly one split */
+}
+
+/* Test: Two entities with overlapping intervals - should create 3 splits */
+TEST(split_two_overlapping) {
+	unsigned itd = it_init(NULL);
+	it_cur_t cur;
+	time_t min, max;
+	unsigned count, who;
+	int split_count, counts[10], i;
+	
+	for (i = 0; i < 10; i++) counts[i] = 0;
+	
+	it_start(itd, 1000, 1);
+	it_stop(itd, 3000, 1);
+	it_start(itd, 2000, 2);
+	it_stop(itd, 4000, 2);
+	
+	cur = it_iter(itd, 1000, 4000);
+	split_count = 0;
+	
+	while (it_next(&min, &max, &count, &who, &cur)) {
+		counts[count]++;
+		split_count++;
+	}
+	
+	/* Should have 3 splits total: [1000-2000] count=1, [2000-3000] count=2, [3000-4000] count=1 */
+	ASSERT(split_count >= 3); 
+	ASSERT(counts[1] >= 2); /* At least 2 splits with count=1 */
+	ASSERT(counts[2] >= 1); /* At least 1 split with count=2 */
+}
+
+/* Test: Gap in coverage - should handle periods with no entities */
+TEST(split_with_gap) {
+	unsigned itd = it_init(NULL);
+	it_cur_t cur;
+	time_t min, max;
+	unsigned count, who;
+	int split_count, found_entity1, found_entity2;
+	
+	it_start(itd, 1000, 1);
+	it_stop(itd, 2000, 1);
+	it_start(itd, 3000, 2);
+	it_stop(itd, 4000, 2);
+	
+	cur = it_iter(itd, 1000, 4000);
+	split_count = 0;
+	found_entity1 = 0;
+	found_entity2 = 0;
+	
+	while (it_next(&min, &max, &count, &who, &cur)) {
+		split_count++;
+		if (who == 1) found_entity1++;
+		if (who == 2) found_entity2++;
+	}
+	
+	ASSERT(split_count >= 2); /* At least 2 splits for the two intervals */
+	ASSERT_EQ(found_entity1, 1);
+	ASSERT_EQ(found_entity2, 1);
+}
+
+/* Test: Three entities with different overlaps */
+TEST(split_three_entities) {
+	unsigned itd = it_init(NULL);
+	it_cur_t cur;
+	time_t min, max;
+	unsigned count, who;
+	int split_count, max_count;
+	
+	it_start(itd, 1000, 1);
+	it_stop(itd, 4000, 1);
+	it_start(itd, 2000, 2);
+	it_stop(itd, 3000, 2);
+	it_start(itd, 2500, 3);
+	it_stop(itd, 3500, 3);
+	
+	cur = it_iter(itd, 1000, 4000);
+	split_count = 0;
+	max_count = 0;
+	
+	while (it_next(&min, &max, &count, &who, &cur)) {
+		split_count++;
+		if ((int)count > max_count) max_count = count;
+	}
+	
+	ASSERT(split_count >= 4); /* Multiple splits */
+	ASSERT(max_count >= 2); /* At least some overlaps */
+}
+
+/* Test: Query range partially outside intervals */
+TEST(split_partial_query_range) {
+	unsigned itd = it_init(NULL);
+	it_cur_t cur;
+	time_t min, max;
+	unsigned count, who;
+	int split_count;
+	
+	it_start(itd, 2000, 1);
+	it_stop(itd, 3000, 1);
+	
+	cur = it_iter(itd, 1000, 4000);
+	split_count = 0;
+	
+	while (it_next(&min, &max, &count, &who, &cur)) {
+		split_count++;
+		ASSERT_EQ(who, 1);
+		/* Split should be clipped to interval bounds */
+		ASSERT(min >= 2000);
+		ASSERT(max <= 3000);
+	}
+	
+	ASSERT_EQ(split_count, 1); /* Should have one split for the interval */
+}
+
+/* Test: Query range entirely within one interval */
+TEST(split_query_within_interval) {
+	unsigned itd = it_init(NULL);
+	it_cur_t cur;
+	time_t min, max;
+	unsigned count, who;
+	int split_count;
+	
+	it_start(itd, 1000, 1);
+	it_stop(itd, 5000, 1);
+	
+	cur = it_iter(itd, 2000, 3000);
+	split_count = 0;
+	
+	while (it_next(&min, &max, &count, &who, &cur)) {
+		split_count++;
+		ASSERT_EQ(who, 1);
+		ASSERT_EQ(min, 2000);
+		ASSERT_EQ(max, 3000);
+		ASSERT_EQ(count, 1);
+	}
+	
+	ASSERT_EQ(split_count, 1);
+}
+
+/* Test: Adjacent intervals (no overlap) */
+TEST(split_adjacent_intervals) {
+	unsigned itd = it_init(NULL);
+	it_cur_t cur;
+	time_t min, max;
+	unsigned count, who;
+	int split_count, found_entity1, found_entity2;
+	
+	it_start(itd, 1000, 1);
+	it_stop(itd, 2000, 1);
+	it_start(itd, 2000, 2);
+	it_stop(itd, 3000, 2);
+	
+	cur = it_iter(itd, 1000, 3000);
+	split_count = 0;
+	found_entity1 = 0;
+	found_entity2 = 0;
+	
+	while (it_next(&min, &max, &count, &who, &cur)) {
+		split_count++;
+		if (who == 1) found_entity1++;
+		if (who == 2) found_entity2++;
+	}
+	
+	ASSERT(split_count >= 2); /* At least 2 splits */
+	ASSERT_EQ(found_entity1, 1);
+	ASSERT_EQ(found_entity2, 1);
+}
+
+/* Test: Many small overlapping intervals */
+TEST(split_many_small_intervals) {
+	unsigned itd = it_init(NULL);
+	it_cur_t cur;
+	time_t min, max;
+	unsigned count, who, i;
+	int split_count;
+	
+	for (i = 0; i < 10; i++) {
+		it_start(itd, 1000 + i * 100, i + 1);
+		it_stop(itd, 1200 + i * 100, i + 1);
+	}
+	
+	cur = it_iter(itd, 1000, 2000);
+	split_count = 0;
+	
+	while (it_next(&min, &max, &count, &who, &cur)) {
+		split_count++;
+	}
+	
+	ASSERT(split_count >= 10); /* Should have at least 10 splits */
+}
+
+/* ============================================
  * Main test runner
  * ============================================ */
 
@@ -433,6 +818,28 @@ int main(void) {
 	RUN_TEST(many_entities);
 	RUN_TEST(entity_zero);
 	RUN_TEST(large_entity_id);
+	
+	/* Category 4: Intersection Queries */
+	printf("\n=== Category 4: Intersection Queries ===\n");
+	RUN_TEST(iter_empty_range);
+	RUN_TEST(iter_single_interval);
+	RUN_TEST(iter_partial_overlap);
+	RUN_TEST(iter_multiple_non_overlapping);
+	RUN_TEST(iter_exact_boundaries);
+	RUN_TEST(iter_before_range);
+	RUN_TEST(iter_after_range);
+	RUN_TEST(iter_same_entity_multiple_intervals);
+	
+	/* Category 5: Split Computation */
+	printf("\n=== Category 5: Split Computation ===\n");
+	RUN_TEST(split_single_entity_full_range);
+	RUN_TEST(split_two_overlapping);
+	RUN_TEST(split_with_gap);
+	RUN_TEST(split_three_entities);
+	RUN_TEST(split_partial_query_range);
+	RUN_TEST(split_query_within_interval);
+	RUN_TEST(split_adjacent_intervals);
+	RUN_TEST(split_many_small_intervals);
 	
 	printf("\n=== Test Summary ===\n");
 	printf("Total errors: %u\n", errors);

@@ -15,6 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Update dependencies in it.pc (libqmap, libqsys instead of libqdb, libdb)
 - Establish CHANGELOG for version tracking
 
+### Fixed
+- Fixed missing qmap_fin() calls in ti_intersect() and split_create() causing memory leaks
+- Fixed integer underflow bug in splits_create() when matches_l=0 causing infinite loop and corruption
+- Added proper empty result handling in splits_get() for query ranges with no matches
+
+### Added
+- Comprehensive test suite (Phase 1 & 2):
+  - Category 1: Basic initialization tests (3 tests)
+  - Category 2: Basic start/stop operation tests (10 tests)
+  - Category 3: Multiple entities tests (15 tests)
+  - Category 4: Intersection query tests (8 tests)
+  - Category 5: Split computation tests (8 tests)
+- Total: 44 automated tests covering all core functionality
+- Integration test script (test.sh) with regression testing via expects.txt
+- Test output formatting with ✅/❌ indicators for easy visual verification
+
 ### Notes
 - Code is fully compatible with qmap v0.6.0 (updated in v1.0.0)
 - Benefits from qmap v0.6.0 improvements:

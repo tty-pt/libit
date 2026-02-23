@@ -30,5 +30,25 @@ test_many_entities ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ �
 test_entity_zero ✅ ✅ 
 test_large_entity_id ✅ ✅ 
 
+=== Category 4: Intersection Queries ===
+test_iter_empty_range ✅ 
+test_iter_single_interval ✅ ✅ ✅ ✅ ✅ ✅ 
+test_iter_partial_overlap ✅ ✅ ✅ ✅ 
+test_iter_multiple_non_overlapping ✅ ✅ ✅ ✅ 
+test_iter_exact_boundaries ✅ ✅ ✅ ✅ 
+test_iter_before_range ✅ 
+test_iter_after_range ✅ 
+test_iter_same_entity_multiple_intervals ✅ ✅ ✅ 
+
+=== Category 5: Split Computation ===
+test_split_single_entity_full_range ✅ ✅ ✅ ✅ ✅ 
+test_split_two_overlapping ✅ ✅ ✅ 
+test_split_with_gap ✅ ✅ ✅ 
+test_split_three_entities ✅ ✅ 
+test_split_partial_query_range ✅ ✅ ✅ ✅ 
+test_split_query_within_interval ✅ ✅ ✅ ✅ ✅ 
+test_split_adjacent_intervals ✅ ✅ ✅ 
+test_split_many_small_intervals ✅ 
+
 === Test Summary ===
 Total errors: 0

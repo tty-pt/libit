@@ -234,7 +234,8 @@ ti_intersect(struct tidbs *dbs, struct match_stailq *matches, time_t min, time_t
 			ret++;
 		}
 	}
-
+	
+	qmap_fin(c);
 	return ret;
 }
 
@@ -353,10 +354,12 @@ split_create(uint32_t who_hd, time_t min, time_t max)
 	c = qmap_iter(who_hd, NULL, 0);
 
 	while (qmap_next(&key, &value, c)) {
-		ids_push(&split->ids, * (uint32_t *) key);
+		uint32_t who_id = * (uint32_t *) key;
+		ids_push(&split->ids, who_id);
 		split->count++;
 	}
-
+	
+	qmap_fin(c);
 	return split;
 }
 
@@ -418,6 +421,14 @@ splits_get(struct split_tailq *splits, struct tidbs *dbs, time_t min, time_t max
 	uint32_t who_hd = qmap_open(NULL, NULL, QM_HNDL, QM_HNDL, SPLITS_WHO_MASK, 0);
 	struct match_stailq matches;
 	uint32_t matches_l = ti_intersect(dbs, &matches, min, max);
+	
+	/* If no matches, initialize empty split queue and return */
+	if (matches_l == 0) {
+		TAILQ_INIT(splits);
+		qmap_close(who_hd);
+		return;
+	}
+	
 	matches_fix(&matches, min, max);
 	splits_init(who_hd, splits, &matches, matches_l);
 	matches_free(&matches);
