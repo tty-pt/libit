@@ -15,6 +15,24 @@
 #include <ttypt/idm.h>
 #include <ttypt/qsys.h>
 
+#ifdef _WIN32
+static char *strptime(const char *s, const char *fmt, struct tm *tm) {
+	int y, mo, d, h, mi, sec;
+	if (sscanf(s, "%d-%d-%dT%d:%d:%d", &y, &mo, &d, &h, &mi, &sec) == 6) {
+		tm->tm_year = y - 1900; tm->tm_mon = mo - 1; tm->tm_mday = d;
+		tm->tm_hour = h; tm->tm_min = mi; tm->tm_sec = sec;
+		return (char *)s + 19;
+	}
+	if (sscanf(s, "%d-%d-%d", &y, &mo, &d) == 3) {
+		tm->tm_year = y - 1900; tm->tm_mon = mo - 1; tm->tm_mday = d;
+		tm->tm_hour = 0; tm->tm_min = 0; tm->tm_sec = 0;
+		return (char *)s + 10;
+	}
+	(void)fmt;
+	return NULL;
+}
+#endif
+
 #ifdef __OpenBSD__
 #define TS_MIN LLONG_MIN
 #define TS_MAX LLONG_MAX
@@ -114,9 +132,9 @@ void printtime(char buf[DATE_MAX_LEN], time_t ts) {
 	tm = *localtime(&ts);
 
 	if (tm.tm_sec || tm.tm_min || tm.tm_hour)
-		strftime(buf, DATE_MAX_LEN, "%FT%T", &tm);
+		strftime(buf, DATE_MAX_LEN, "%Y-%m-%dT%H:%M:%S", &tm);
 	else
-		strftime(buf, DATE_MAX_LEN, "%F", &tm);
+		strftime(buf, DATE_MAX_LEN, "%Y-%m-%d", &tm);
 }
 
 /******
