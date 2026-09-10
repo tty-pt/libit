@@ -74,6 +74,22 @@ These are automatically built and linked when you run `make`.
 | [LIBIT_LIMITATIONS.md](./LIBIT_LIMITATIONS.md) | Known limitations and workarounds |
 | [TESTING_SUMMARY.md](./TESTING_SUMMARY.md) | Test coverage and results |
 
+## Recall Kernel Adapter (roadmap — W4)
+
+libit is a time axis for the recall kernel (`rec.h` in libqmap; spec in
+libqmap's `docs/RECALL-KERNEL.md`). The planned adapter — **not yet
+implemented** — follows the contract (one filler, streams matches, seals,
+plain `int` return, additive):
+
+```c
+/* Proposed (W4), not implemented. */
+int rec_axis_fill_interval(unsigned itd, time_t a, time_t b, rec_set_t *out);
+```
+
+Exact `[a,b)` interval membership, entity id widened to `rec_ref_t`. Until
+it lands, compose libit with the existing `it_iter`/`it_next` cursor and
+push into a `rec_set_t` yourself.
+
 ## API Overview
 
 | Function | Description |
