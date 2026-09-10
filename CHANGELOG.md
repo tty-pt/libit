@@ -5,6 +5,36 @@ All notable changes to libit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-09-10
+
+### Fixed — W3 index-read efficiency regression
+
+- Equality reads (`ti_present`, `ti_finish_last`) now use
+  `qmap_get_multi()` instead of `qmap_iter(…, QM_RANGE)`: the same
+  duplicate-set iteration but O(k) per key (chain walk) with no
+  full-table unsorted-to-sorted rebuild of the MV indexes.
+  libqmap ≥ 0.8.0 (chains) / ≥ 0.8.0-backshift (no-holes) required;
+  compat floors otherwise unchanged (≥ `1a4bfa2` auto-grow,
+  ≥ `b1bc322` assoc-multivalue).
+- No public `it_*` behavior changed; `ti_intersect` GE scans on `max`
+  unchanged.
+
+### Performance (vs pre-W3 baseline, new libqmap)
+
+| Bench | Baseline | Now |
+|---|---|---|
+| 10k start+stop | 2 499 442 µs | **14 297 µs** |
+| query-all | 1 833 316 µs | **872 228 µs** |
+| sequential | 579 107 µs | **573 451 µs** |
+| interleave | 12 981 µs | **998 µs** |
+| 15k insert | 5 928 149 µs | **17 749 µs** |
+| 20k insert | 9 131 138 µs | **18 124 µs** |
+| 1000-cycle | 100 342 259 µs | **71 072 518 µs** |
+
+**Test count:** still 74 (59 core + 15 extended), all passing.
+
+---
+
 ## [1.2.1] - 2026-02-23
 
 ### Fixed - File Persistence

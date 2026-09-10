@@ -2,7 +2,7 @@
 
 This document describes design limitations discovered during comprehensive testing. Some limitations have been addressed in subsequent versions.
 
-## Summary of Current Status (v1.2.1)
+## Summary of Current Status (v1.2.2)
 
 | Limitation | Status | Version Fixed |
 |------------|--------|---------------|
@@ -11,13 +11,14 @@ This document describes design limitations discovered during comprehensive testi
 | Extreme Timestamps (overflow risk) | **FIXED** | v1.2.0 |
 | UINT32_MAX Entity ID (sentinel conflict) | **FIXED** | v1.2.0 |
 | File Persistence (qmap bugs) | **FIXED** | v1.2.1 |
+| MV Index Write Efficiency (W3 regression) | **FIXED** | v1.2.2 |
 | Zero-Duration Intervals (start == stop) | **NOT FIXED** | By Design |
 
-**See CHANGELOG.md for v1.2.1 implementation details.**
+**See CHANGELOG.md for v1.2.2 implementation details.**
 
 ---
 
-# Fixed Limitations (as of v1.2.1)
+# Fixed Limitations (as of v1.2.2)
 
 The following limitations have been addressed:
 
@@ -411,6 +412,39 @@ All 5 persistence tests now pass:
 
 ---
 
+## 7. MV Index Write Efficiency (W3 regression) → FIXED ✅
+
+**Status:** FIXED in v1.2.2 (libqmap MV duplicate chains + backshift; libit equality reads via `qmap_get_multi`)
+
+### Description
+Adopting qmap's QM_MULTIVALUE subsidiary indexes (W3) made every libit write
+and some reads hit libqmap's lazy-sorted-index design per operation:
+- `it_start`/`it_stop` → `ti_present` → full id-index qsort per insert
+  (**×9–16 inserts**).
+- `ti_finish_last` delete → MV sorted rebuild per delete; `qmap_close`
+  per-entry MV deletes → quadratic close (**hang**).
+- `it_iter` GE-bsearch on `max` → one full rebuild per write→query burst
+  (×1.9 queries).
+- A later `qmap_mv_slot` full-table probe (up to 65 536 slots) made fresh-key
+  puts O(m) again after the first fix (libit 10k pairs: 21.4 s → 14 ms).
+
+### Fix (v1.2.2)
+- libqmap: per-key MV duplicate chain (O(k) `qmap_get_multi`, O(k) MV delete,
+  O(N) close) + hole-eliminating backshift delete (all probes early-exit).
+- libit: `ti_present`/`ti_finish_last` now use `qmap_get_multi()` (O(k)) with
+  `QM_MISS` guards. `ti_intersect` GE scans on `max` unchanged.
+
+### Results
+All benchmarks at or below the pre-adoption baseline; 10k start+stop pairs
+2 499 442 µs → 14 297 µs; query-all 1 833 316 → 872 228 µs; 1000-cycle
+100 342 259 → 71 072 518 µs. No behavior change; all 74 tests pass.
+Requires libqmap with the MV chain + backshift (0.8.0).
+
+### Related Tests
+- `src/test_extended.c`: 15 extended benchmarks; `src/test.c`: 59 core tests.
+
+---
+
 # Remaining Limitations (Not Fixed)
 
 ## 6. Zero-Duration Intervals Not Supported (BY DESIGN)
@@ -556,7 +590,13 @@ LD_LIBRARY_PATH=./lib ./bin/test_extended
 
 ### Compatibility Notes
 
-**v1.2.1 (current):**
+**v1.2.2 (current):**
+- TI_MASK: 0xFFFF (65,536 intervals)
+- SPLITS_WHO_MASK: 0xFFF (4,096 entities)
+- Input validation + MV index efficiency fixes (qmap_get_multi)
+- Compatible with qmap 0.8.0+ (MV duplicate chains + backshift)
+
+**v1.2.1 (legacy):**
 - TI_MASK: 0xFFFF (65,536 intervals)
 - SPLITS_WHO_MASK: 0xFFF (4,096 entities)
 - Input validation enabled (errno-based error reporting)
@@ -584,10 +624,11 @@ LD_LIBRARY_PATH=./lib ./bin/test_extended
 
 ## Version History
 
+- **2026-09-10 (v1.2.2)**: Fixed MV index write efficiency (W3 regression; libqmap 0.8.0 chains + backshift, libit qmap_get_multi)
 - **2026-02-23 (v1.2.1)**: Fixed file persistence (removed QM_MIRROR)
 - **2026-02-23 (v1.2.0)**: Fixed 4 of 5 limitations - mask increases and input validation
 - **2026-02-23 (v1.1.0)**: Initial documentation (Phase 4 extended testing)
-- **qmap b1bc322**: Current dependency version
+- **qmap b1bc322**: Prior dependency baseline
 - **qmap v0.6.0**: Original dependency version
 
 ---

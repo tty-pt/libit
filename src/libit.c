@@ -164,6 +164,37 @@ tiid_cmp(const void * const a_r,
 }
 
 /******
+ * qmap_assoc key callbacks
+ *
+ * The `max` and `id` secondary maps are wired to the primary `ti` map via
+ * qmap_assoc (QM_SORTED | QM_MULTIVALUE), so every qmap_put/qmap_del on the
+ * primary automatically maintains both indexes — including duplicate
+ * secondary keys (two intervals with the same max, or multiple intervals for
+ * the same entity). qmap >= b1bc322 supports duplicate keys properly
+ * (QM_MULTIVALUE; QM_RANGE iterates all duplicates — bug3).
+ ******/
+
+/* secondary key for the max index: the interval's max timestamp */
+static void
+assoc_max_time_cb(const void **skey,
+		const void * const pkey UNUSED,
+		const void * const value,
+		void *userdata UNUSED)
+{
+	*skey = &((struct ti *)value)->max;
+}
+
+/* secondary key for the id index: the interval's entity id */
+static void
+assoc_id_cb(const void **skey,
+		const void * const pkey UNUSED,
+		const void * const value,
+		void *userdata UNUSED)
+{
+	*skey = &((struct ti *)value)->who;
+}
+
+/******
  * Database initializers
  ******/
 
@@ -182,15 +213,25 @@ static void
 tidbs_init(struct tidbs *dbs, char *fname)
 {
 	uint32_t flags = 0;  /* QM_MIRROR optional in qmap v0.7.0+, not needed for persistence */
-	
+
 	/* Only persist the primary 'ti' database; secondary indexes are in-memory only */
 	dbs->ti = qmap_open(fname, "ti", qm_ti, qm_ti, TI_MASK, flags);
-	dbs->max = qmap_open(NULL, NULL, qm_time, qm_ti, TI_MASK, QM_SORTED);
-	dbs->id = qmap_open(NULL, NULL, qm_id, qm_ti, TI_MASK, QM_SORTED);
-	
+	dbs->max = qmap_open(NULL, NULL, qm_time, qm_ti, TI_MASK, QM_SORTED | QM_MULTIVALUE);
+	dbs->id = qmap_open(NULL, NULL, qm_id, qm_ti, TI_MASK, QM_SORTED | QM_MULTIVALUE);
+
 	qmap_cmp_set(qm_time, timax_cmp);
-	/* NOTE: We do NOT use qmap_assoc because QM_SORTED doesn't support duplicate keys properly.
-	 * Instead, we manually maintain the secondary indexes in ti_insert and ti_finish_last. */
+
+	/* Wire the secondary indexes to the primary 'ti' map via qmap_assoc:
+	 * every qmap_put/qmap_del on the primary automatically maintains both
+	 * indexes (assoc_max_time_cb/assoc_id_cb pick the secondary key), and
+	 * qmap_assoc itself backfills the indexes from any entries already
+	 * present in the primary (e.g. loaded from the file when it is
+	 * reopened). Since qmap b1bc322 duplicate secondary keys are properly
+	 * supported (QM_MULTIVALUE; QM_RANGE iterates all duplicates — bug3),
+	 * so two intervals with the same max time, or multiple intervals for
+	 * the same entity, are all indexed. */
+	qmap_assoc(dbs->max, dbs->ti, assoc_max_time_cb, NULL);
+	qmap_assoc(dbs->id, dbs->ti, assoc_id_cb, NULL);
 }
 
 /******
@@ -213,12 +254,18 @@ ti_finish_last(struct tidbs *dbs, uint32_t id, time_t end)
 {
 	struct ti ti, old_ti;
 	const void *key, *value;
-	uint32_t c = qmap_iter(dbs->ti, NULL, 0);  // Iterate through ALL intervals
+	/* Only scan this entity's intervals (via the id index) instead of all
+	 * intervals. The chain-based get_multi yields the same duplicate set
+	 * as the old QM_RANGE scan, without triggering a sorted-index rebuild. */
+	uint32_t c = qmap_get_multi(dbs->id, &id);
 	int found = 0;
+
+	if (c == QM_MISS)
+		return;  /* No intervals for this entity at all */
 
 	while (qmap_next(&key, &value, c)) {
 		memcpy(&ti, value, sizeof(ti));
-		
+
 		/* Find the open interval (max=tinf) for this entity */
 		if (ti.who == id && ti.max == tinf) {
 			memcpy(&old_ti, &ti, sizeof(ti));
@@ -248,7 +295,12 @@ ti_intersect(struct tidbs *dbs, struct match_stailq *matches, time_t min, time_t
 	int ret = 0;
 
 	STAILQ_INIT(matches);
-	uint32_t c = qmap_iter(dbs->ti, NULL, 0);  // Iterate through ALL intervals
+	/* Start at the first interval with max >= min (via the max index) —
+	 * a lower-bound range (all duplicate maxes included) — instead of
+	 * scanning every interval; the match predicate below is kept
+	 * identical. QM_RANGE_GE is needed because on QM_MULTIVALUE maps
+	 * plain QM_RANGE would only iterate duplicates of the exact key. */
+	uint32_t c = qmap_iter(dbs->max, &min, QM_RANGE | QM_RANGE_GE);
 
 	while (qmap_next(&key, &value, c)) {
 		memcpy(&tmp, value, sizeof(struct ti));
@@ -270,9 +322,16 @@ int
 ti_present(struct tidbs *dbs, time_t when, uint32_t who) {
 	int ret = 0;
 	struct ti tmp;
-	uint32_t c = qmap_iter(dbs->ti, NULL, 0);  // Iterate through ALL intervals
+	/* Only scan this entity's intervals (via the id index) instead of all
+	 * intervals; the predicate below is kept identical. The chain-based
+	 * get_multi yields the same duplicate set as the old QM_RANGE scan,
+	 * without triggering a sorted-index rebuild. */
+	uint32_t c = qmap_get_multi(dbs->id, &who);
 	const void *key, *value;
-	
+
+	if (c == QM_MISS)
+		return ret;  /* No intervals for this entity at all */
+
 	while (qmap_next(&key, &value, c)) {
 		memcpy(&tmp, value, sizeof(struct ti));
 		
