@@ -103,6 +103,23 @@ push into a `rec_set_t` yourself.
 
 See [include/ttypt/it.h](./include/ttypt/it.h) for complete API documentation.
 
+## Performance
+
+Build flags: `-O3 -mpopcnt -mavx2 -mfma` (see `Makefile`). The query path
+uses contiguous arenas for matches and splits plus an ephemeral
+open-addressing entity set (no per-match/per-entity mallocs, no temp
+qmap per gap). Record the numbers yourself:
+
+```bash
+make bench   # bin/test_extended with µs timing lines
+```
+
+Recent medians (µs, same loaded box, `-O0` baseline vs this tree):
+query-all 10k 3.67M→1.60M (2.3×), 1k-overlap query 5.4k→326 (16.7×),
+3k-overlap query 62k→1.3k (48.5×), 1000 insert/query cycles
+180.8M→26.7M (6.8×), splits 343→62 (5.5×), inserts ~2×. Full table in
+[CHANGELOG.md](./CHANGELOG.md) (`[Unreleased]`).
+
 ## Version
 
 Current: **v1.2.1**

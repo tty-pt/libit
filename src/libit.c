@@ -42,7 +42,6 @@ static char *strptime(const char *s, const char *fmt, struct tm *tm) {
 #endif
 
 #define TI_DBS_MAX 512
-#define SPLITS_WHO_MASK 0xFFF
 #define TI_MASK 0xFFFF
 
 enum cflags {
@@ -63,20 +62,195 @@ struct isplit {
 
 struct match {
 	struct ti ti;
-	STAILQ_ENTRY(match) entry;
 };
 
-STAILQ_HEAD(match_stailq, match);
+struct match_arena {
+	struct match *buf;   /* contiguous, cache-resident */
+	size_t len;          /* used */
+	size_t cap;          /* allocated */
+};
+
+/* append one match slot; grows by doubling */
+static inline struct match *
+match_arena_push(struct match_arena *restrict m)
+{
+	if (m->len == m->cap) {
+		size_t ncap = m->cap ? m->cap * 2 : 16;
+		struct match *nbuf = (struct match *) realloc(m->buf, ncap * sizeof(struct match));
+		CBUG(!nbuf, "out of memory in match_arena_push");
+		m->buf = nbuf;
+		m->cap = ncap;
+	}
+	return &m->buf[m->len++];
+}
+
+static inline void
+match_arena_drop(struct match_arena *m)
+{
+	free(m->buf);
+	m->buf = NULL;
+	m->len = m->cap = 0;
+}
 
 struct split {
 	time_t min;
 	time_t max;
-	ids_t ids;
-	unsigned count;
+	uint32_t *ids;   /* contiguous LIFO stack, points into the query arena */
+	unsigned count;  /* number of ids */
+	unsigned pop;    /* LIFO cursor: count..0 */
 	TAILQ_ENTRY(split) entry;
 };
 
 TAILQ_HEAD(split_tailq, split);
+
+/* Query-level arena: split structs + id stacks drawn from linked blocks.
+ * Blocks are allocated on demand and NEVER moved or freed for the lifetime of
+ * the query, so TAILQ pointers and split->ids remain stable even while
+ * splits_fill appends more splits (this is the invariant the previous
+ * growable-buffer design broke). */
+struct bblock {
+	struct bblock *next;
+	size_t cap, used;   /* body follows */
+};
+
+struct split_arena {
+	struct bblock *blk;   /* current block */
+};
+
+static inline void *
+arena_alloc(struct split_arena *a, size_t nbytes)
+{
+	const size_t align = 16;
+	size_t need = (nbytes + align - 1) & ~((size_t) align - 1);
+	struct bblock *b = a->blk;
+
+	if (!b || b->cap - b->used < need) {
+		size_t cap = b ? b->cap * 2 : 8192;
+		if (cap < need)
+			cap = need;
+		struct bblock *nb = (struct bblock *) malloc(sizeof(*nb) + cap);
+		CBUG(!nb, "out of memory in arena");
+		nb->next = b;
+		nb->cap = cap;
+		nb->used = 0;
+		a->blk = nb;
+		b = nb;
+	}
+
+	void *p = (char *)(b + 1) + b->used;
+	b->used += need;
+	return p;
+}
+
+/* Ephemeral open-addressing set of entity ids (tombstone deletions),
+ * replacing the per-splits_get temp qmap. key[i] stores id+1 (0 = empty);
+ * del[i] marks a tombstone. Grows by doubling when live+dead occupancy
+ * reaches half capacity (compacting tombstones). Lives for one endpoint
+ * sweep; split_create reads the present set by scanning slots. */
+struct who_set {
+	uint32_t *key;
+	uint8_t *del;
+	size_t cap;    /* power of 2 */
+	size_t n;      /* live count */
+	size_t used;   /* live + tombstone */
+};
+
+static inline void
+who_set_init(struct who_set *s)
+{
+	s->key = NULL;
+	s->del = NULL;
+	s->cap = s->n = s->used = 0;
+}
+
+static inline void
+who_set_free(struct who_set *s)
+{
+	free(s->key);
+	free(s->del);
+	who_set_init(s);
+}
+
+static inline size_t
+who_set_slot(const struct who_set *s, uint32_t stored)
+{
+	return (size_t)((uint32_t)(stored * 2654435761u)) & (s->cap - 1);
+}
+
+static void
+who_set_grow(struct who_set *s)
+{
+	size_t ncap = s->cap ? s->cap * 2 : 64;
+	uint32_t *nk = (uint32_t *) calloc(ncap, sizeof(uint32_t));
+	uint8_t *nd = (uint8_t *) calloc(ncap, sizeof(uint8_t));
+
+	if (!nk || !nd) {
+		free(nk);
+		free(nd);
+		CBUG(1, "out of memory in who_set_grow");
+	}
+
+	if (s->cap) {
+		for (size_t i = 0; i < s->cap; i++) {
+			if (s->key[i] && !s->del[i]) {
+				uint32_t k = s->key[i];
+				size_t j = (size_t)((uint32_t)(k * 2654435761u)) & (ncap - 1);
+				while (nk[j])
+					j = (j + 1) & (ncap - 1);
+				nk[j] = k;
+			}
+		}
+	}
+
+	free(s->key);
+	free(s->del);
+	s->key = nk;
+	s->del = nd;
+	s->cap = ncap;
+	s->used = s->n;
+}
+
+static inline void
+who_set_put(struct who_set *s, uint32_t id)
+{
+	uint32_t stored = id + 1;
+	size_t j, hole = (size_t) -1;
+
+	if (s->used >= s->cap / 2)
+		who_set_grow(s);
+
+	j = who_set_slot(s, stored);
+	while (s->key[j]) {
+		if (s->key[j] == stored && !s->del[j])
+			return;   /* already live */
+		if (s->del[j] && hole == (size_t) -1)
+			hole = j;
+		j = (j + 1) & (s->cap - 1);
+	}
+	if (hole != (size_t) -1)
+		j = hole;
+	s->key[j] = stored;
+	s->del[j] = 0;
+	s->n++;
+	s->used++;
+}
+
+static inline void
+who_set_del(struct who_set *s, uint32_t id)
+{
+	uint32_t stored = id + 1;
+	size_t j = who_set_slot(s, stored);
+
+	while (s->key[j]) {
+		if (s->key[j] == stored && !s->del[j])
+			break;
+		j = (j + 1) & (s->cap - 1);
+	}
+	if (!s->key[j])
+		return;   /* not present */
+	s->del[j] = 1;
+	s->n--;
+}
 
 struct tidbs {
 	uint32_t ti; // keys and values are struct ti
@@ -288,13 +462,13 @@ ti_finish_last(struct tidbs *dbs, uint32_t id, time_t end)
 
 /* intersect an interval with an AVL of intervals */
 static inline unsigned
-ti_intersect(struct tidbs *dbs, struct match_stailq *matches, time_t min, time_t max)
+ti_intersect(struct tidbs *dbs, struct match_arena *matches, time_t min, time_t max)
 {
 	struct ti tmp;
 	const void *key, *value;
 	int ret = 0;
 
-	STAILQ_INIT(matches);
+	match_arena_drop(matches);
 	/* Start at the first interval with max >= min (via the max index) —
 	 * a lower-bound range (all duplicate maxes included) — instead of
 	 * scanning every interval; the match predicate below is kept
@@ -307,9 +481,8 @@ ti_intersect(struct tidbs *dbs, struct match_stailq *matches, time_t min, time_t
 
 		if (tmp.max >= min && tmp.min < max) {
 			// its a match
-			struct match *match = (struct match *) malloc(sizeof(struct match));
+			struct match *match = match_arena_push(matches);
 			memcpy(&match->ti, &tmp, sizeof(tmp));
-			STAILQ_INSERT_TAIL(matches, match, entry);
 			ret++;
 		}
 	}
@@ -351,26 +524,14 @@ ti_present(struct tidbs *dbs, time_t when, uint32_t who) {
 
 /* makes all provided matches lie within the provided interval [min, max] */
 static inline void
-matches_fix(struct match_stailq *matches, time_t min, time_t max)
+matches_fix(struct match_arena *matches, time_t min, time_t max)
 {
-	struct match *match;
-
-	STAILQ_FOREACH(match, matches, entry) {
+	for (size_t i = 0; i < matches->len; i++) {
+		struct match *match = &matches->buf[i];
 		if (match->ti.min < min)
 			match->ti.min = min;
 		if (match->ti.max > max)
 			match->ti.max = max;
-	}
-}
-
-static void
-matches_free(struct match_stailq *matches)
-{
-	struct match *match, *match_tmp;
-
-	STAILQ_FOREACH_SAFE(match, matches, entry, match_tmp) {
-		STAILQ_REMOVE_HEAD(matches, entry);
-		free(match);
 	}
 }
 
@@ -382,16 +543,15 @@ matches_free(struct match_stailq *matches)
 static int
 isplit_cmp(const void *ap, const void *bp)
 {
-	struct isplit a, b;
-	memcpy(&a, ap, sizeof(struct isplit));
-	memcpy(&b, bp, sizeof(struct isplit));
-	if (b.ts > a.ts)
+	const struct isplit *a = (const struct isplit *)ap;
+	const struct isplit *b = (const struct isplit *)bp;
+	if (b->ts > a->ts)
 		return -1;
-	if (a.ts > b.ts)
+	if (a->ts > b->ts)
 		return 1;
-	if (b.max > a.max)
+	if (b->max > a->max)
 		return -1;
-	if (a.max > b.max)
+	if (a->max > b->max)
 		return 1;
 	return 0;
 }
@@ -399,12 +559,11 @@ isplit_cmp(const void *ap, const void *bp)
 // assumes isplits is of size matches_l * 2
 /* creates intermediary isplits */
 static inline struct isplit *
-isplits_create(struct match_stailq *matches, size_t matches_l) {
-	struct isplit *isplits = (struct isplit *) malloc(sizeof(struct isplit) * matches_l * 2);
-	struct match *match;
-	uint32_t i = 0;
+isplits_create(struct match_arena *matches) {
+	struct isplit *isplits = (struct isplit *) malloc(sizeof(struct isplit) * matches->len * 2);
 
-	STAILQ_FOREACH(match, matches, entry) {
+	for (size_t i = 0; i < matches->len; i++) {
+		struct match *match = &matches->buf[i];
 		struct isplit *isplit = isplits + i * 2;
 		isplit->ts = match->ti.min;
 		isplit->max = 0;
@@ -413,8 +572,7 @@ isplits_create(struct match_stailq *matches, size_t matches_l) {
 		isplit->ts = match->ti.max;
 		isplit->max = 1;
 		isplit->who = match->ti.who;
-		i ++;
-	};
+	}
 
 	return isplits;
 }
@@ -424,44 +582,43 @@ isplits_create(struct match_stailq *matches, size_t matches_l) {
  ******/
 
 /* Creates one split from its interval, and the list of people that are present
+ * (allocated from the query-level arena; single pass over the present set)
  */
 static inline struct split *
-split_create(uint32_t who_hd, time_t min, time_t max)
+split_create(struct who_set *whos, time_t min, time_t max, struct split_arena *arena)
 {
-	struct split *split = (struct split *) malloc(sizeof(struct split));
-	uint32_t c;
-	const void *key, *value;
+	struct split *split = (struct split *) arena_alloc(arena, sizeof(struct split));
+	uint32_t *dst = NULL;
+	uint32_t i = 0;
+
+	if (whos->n) {
+		dst = (uint32_t *) arena_alloc(arena, (size_t) whos->n * sizeof(uint32_t));
+		for (size_t j = 0; j < whos->cap; j++) {
+			if (whos->key[j] && !whos->del[j])
+				dst[i++] = whos->key[j] - 1;
+		}
+	}
 
 	split->min = min;
 	split->max = max;
-	split->ids = ids_init();
-	split->count = 0;
-
-	c = qmap_iter(who_hd, NULL, 0);
-
-	while (qmap_next(&key, &value, c)) {
-		uint32_t who_id = * (uint32_t *) key;
-		ids_push(&split->ids, who_id);
-		split->count++;
-	}
-	
-	qmap_fin(c);
+	split->ids = dst;
+	split->count = whos->n;
+	split->pop = whos->n;
 	return split;
 }
 
 /* Creates splits from the intermediary isplit array */
 static inline void
 splits_create(
-		uint32_t who_hd,
+		struct who_set *whos,
 		struct split_tailq *splits,
 		struct isplit *isplits,
-		size_t matches_l)
+		size_t matches_l,
+		struct split_arena *arena)
 {
 	size_t i;
 
 	TAILQ_INIT(splits);
-
-	qmap_drop(who_hd);
 
 	for (i = 0; i < matches_l * 2 - 1; i++) {
 		struct isplit *isplit = isplits + i;
@@ -470,9 +627,9 @@ splits_create(
 		time_t n, m;
 
 		if (isplit->max)
-			qmap_del(who_hd, &isplit->who);
+			who_set_del(whos, isplit->who);
 		else
-			qmap_put(who_hd, &isplit->who, &isplit->who);
+			who_set_put(whos, isplit->who);
 
 		n = isplit->ts;
 		m = isplit2->ts;
@@ -480,7 +637,7 @@ splits_create(
 		if (n == m)
 			continue;
 
-		split = split_create(who_hd, n, m);
+		split = split_create(whos, n, m, arena);
 		TAILQ_INSERT_TAIL(splits, split, entry);
 	}
 }
@@ -488,13 +645,13 @@ splits_create(
 /* From a list of matched intervals, this creates the tail queue of splits
  */
 static void
-splits_init(uint32_t who_hd, struct split_tailq *splits, struct match_stailq *matches, uint32_t matches_l)
+splits_init(struct who_set *whos, struct split_tailq *splits, struct match_arena *matches, struct split_arena *arena)
 {
 	struct isplit *isplits;
 
-	isplits = isplits_create(matches, matches_l);
-	qsort(isplits, matches_l * 2, sizeof(struct isplit), isplit_cmp);
-	splits_create(who_hd, splits, isplits, matches_l);
+	isplits = isplits_create(matches);
+	qsort(isplits, matches->len * 2, sizeof(struct isplit), isplit_cmp);
+	splits_create(whos, splits, isplits, matches->len, arena);
 	free(isplits);
 }
 
@@ -502,23 +659,26 @@ splits_init(uint32_t who_hd, struct split_tailq *splits, struct match_stailq *ma
  * interval [min, max]
  */
 static void
-splits_get(struct split_tailq *splits, struct tidbs *dbs, time_t min, time_t max)
+splits_get(struct split_tailq *splits, struct tidbs *dbs, time_t min, time_t max, struct split_arena *arena)
 {
-	uint32_t who_hd = qmap_open(NULL, NULL, QM_HNDL, QM_HNDL, SPLITS_WHO_MASK, 0);
-	struct match_stailq matches;
-	uint32_t matches_l = ti_intersect(dbs, &matches, min, max);
+	struct who_set whos;
+	struct match_arena matches = { 0 };
+	uint32_t matches_l;
+
+	who_set_init(&whos);
+	matches_l = ti_intersect(dbs, &matches, min, max);
 	
 	/* If no matches, initialize empty split queue and return */
 	if (matches_l == 0) {
 		TAILQ_INIT(splits);
-		qmap_close(who_hd);
+		who_set_free(&whos);
 		return;
 	}
 	
 	matches_fix(&matches, min, max);
-	splits_init(who_hd, splits, &matches, matches_l);
-	matches_free(&matches);
-	qmap_close(who_hd);
+	splits_init(&whos, splits, &matches, arena);
+	match_arena_drop(&matches);
+	who_set_free(&whos);
 }
 
 /* Inserts a tail queue of splits within another, before the element provided
@@ -542,14 +702,14 @@ splits_concat_before(
  * within the billing period (the aforementined gaps).
  */
 static inline void
-splits_fill(struct tidbs *tidbs, struct split_tailq *splits, time_t min, time_t max)
+splits_fill(struct tidbs *tidbs, struct split_tailq *splits, time_t min, time_t max, struct split_arena *arena)
 {
 	struct split *split, *tmp;
 	time_t last_max;
 
 	split = TAILQ_FIRST(splits);
 	if (!split) {
-		splits_get(splits, tidbs, min, max);
+		splits_get(splits, tidbs, min, max, arena);
 		return;
 	}
 
@@ -557,7 +717,7 @@ splits_fill(struct tidbs *tidbs, struct split_tailq *splits, time_t min, time_t 
 
 	if (split->min > last_max) {
 		struct split_tailq more_splits;
-		splits_get(&more_splits, tidbs, last_max, split->min);
+		splits_get(&more_splits, tidbs, last_max, split->min, arena);
 		splits_concat_before(splits, &more_splits, split);
 	}
 
@@ -566,7 +726,7 @@ splits_fill(struct tidbs *tidbs, struct split_tailq *splits, time_t min, time_t 
 	TAILQ_FOREACH_SAFE(split, splits, entry, tmp) {
 		if (!split->count) {
 			struct split_tailq more_splits;
-			splits_get(&more_splits, tidbs, split->min, split->max);
+			splits_get(&more_splits, tidbs, split->min, split->max, arena);
 			splits_concat_before(splits, &more_splits, split);
 			TAILQ_REMOVE(splits, split, entry);
 		}
@@ -576,21 +736,8 @@ splits_fill(struct tidbs *tidbs, struct split_tailq *splits, time_t min, time_t 
 
 	if (max > last_max) {
 		struct split_tailq more_splits;
-		splits_get(&more_splits, tidbs, last_max, max);
+		splits_get(&more_splits, tidbs, last_max, max, arena);
 		TAILQ_CONCAT(splits, &more_splits, entry);
-	}
-}
-
-/* Frees a tail queue of splits */
-static void UNUSED
-splits_free(struct split_tailq *splits)
-{
-	struct split *split, *split_tmp;
-
-	TAILQ_FOREACH_SAFE(split, splits, entry, split_tmp) {
-		ids_drop(&split->ids);
-		TAILQ_REMOVE(splits, split, entry);
-		free(split);
 	}
 }
 
@@ -673,14 +820,16 @@ struct it_internal {
 	uint32_t itd;
 	struct split_tailq splits;
 	struct split *next;
+	struct split_arena arena;
 };
 
 it_cur_t it_iter(uint32_t itd, time_t start, time_t end)
 {
 	struct it_internal *internal = malloc(sizeof(struct it_internal));
 	struct tidbs *tidbs = &ti_dbs[itd];
-	splits_get(&internal->splits, tidbs, start, end);
-	splits_fill(tidbs, &internal->splits, start, end);
+	memset(&internal->arena, 0, sizeof(internal->arena));
+	splits_get(&internal->splits, tidbs, start, end, &internal->arena);
+	splits_fill(tidbs, &internal->splits, start, end, &internal->arena);
 	internal->next = TAILQ_FIRST(&internal->splits);
 	internal->itd = itd;
 	return internal;
@@ -689,19 +838,19 @@ it_cur_t it_iter(uint32_t itd, time_t start, time_t end)
 int it_next(time_t *min, time_t *max, uint32_t *count, uint32_t *who, it_cur_t *c) {
 	struct it_internal *internal = *c;
 
-	if (!internal->next)
-		return 0;
-
-	while ((*who = ids_pop(&internal->next->ids)) == (uint32_t) -1) {
+	while (internal->next) {
+		struct split *s = internal->next;
+		if (s->pop > 0) {
+			*who = s->ids[s->pop - 1];
+			s->pop--;
+			*min = s->min;
+			*max = s->max;
+			*count = s->count;
+			return 1;
+		}
 		internal->next = TAILQ_NEXT(internal->next, entry);
-		if (!internal->next)
-			return 0;
 	}
-
-	*min = internal->next->min;
-	*max = internal->next->max;
-	*count = internal->next->count;
-	return 1;
+	return 0;
 }
 
 uint32_t it_init(char *fname) {

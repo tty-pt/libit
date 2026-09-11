@@ -5,6 +5,66 @@ All notable changes to libit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed — sweep-line performance tiers (query path ~2–48× faster)
+
+Public API unchanged. All work is in the query/split path
+(`it_iter` → `it_next`); write path (`it_start`/`it_stop`) untouched.
+
+- **T0**: `CFLAGS += -O3 -mpopcnt -mavx2 -mfma` (the library previously
+  built at `-O0`); new `make bench` target runs `bin/test_extended`
+  with µs timing lines.
+- **T1**: `isplit_cmp` no longer `memcpy`s 16 bytes per comparison —
+  direct pointer-cast field compare (≈2M·log(2M) comparisons per query).
+- **T2**: per-match `malloc` in `ti_intersect` replaced by a
+  `realloc`-grown contiguous `struct match_arena` (bulk-freed per query).
+- **T3**: per-split `malloc` + per-entity `ids_push` (one malloc each)
+  replaced by a query-level block-list arena (`struct split_arena`,
+  blocks never move so TAILQ pointers and `split->ids` stay stable
+  across `splits_fill` recursion); split id lists are contiguous
+  `uint32_t` LIFO stacks. Dead `splits_free` removed.
+- **T4**: the temp per-gap qmap (`qmap_open`/`qmap_close` on every
+  `splits_get`) replaced by an ephemeral open-addressing `who_set`
+  (tombstone deletions, count maintained so `split_create` is
+  single-pass); `SPLITS_WHO_MASK` retired.
+
+### Fixed
+
+- Two latent signed-integer overflows in `src/test_extended.c` exposed
+  by `-Waggressive-loop-optimizations`/UBSan: `1700000000 + i * 86400`
+  (overflows `int` at i=5180) → `time_t` arithmetic; query end
+  `huge + 1000` (overflows int64) → `huge` (same coverage, interval
+  ends at `huge`).
+
+### Performance (medians, µs; `make bench` on one loaded box)
+
+Baseline = pristine `-O0` build (medians of 3); optimized = this tree
+(medians of 9). Same machine, same load window.
+
+| Bench | Baseline | Now | × |
+|---|---|---|---|
+| 10k insert | 35 734 | 16 137 | 2.2 |
+| query-all (10k) | 3 673 044 | 1 601 764 | 2.3 |
+| 1k overlap insert | 9 234 | 5 258 | 1.8 |
+| 1k overlap query | 5 444 | 326 | 16.7 |
+| sequential 5k | 2 267 215 | 1 287 717 | 1.8 |
+| sparse query | 81 | 13 | 6.2 |
+| splits (100 ent) | 343 | 62 | 5.5 |
+| 1000 insert/query cycles | 180 756 539 | 26 737 804 | 6.8 |
+| 15k insert | 45 691 | 21 613 | 2.1 |
+| 15k range query | 2 034 606 | 997 656 | 2.0 |
+| 3k overlap insert | 52 867 | 30 614 | 1.7 |
+| 3k overlap query | 62 079 | 1 281 | 48.5 |
+| 20k insert | 93 440 | 33 995 | 2.7 |
+| 20k range query | 1 683 350 | 801 620 | 2.1 |
+
+Absolute numbers swing 2–5× with machine load (both columns measured in
+the same window, so ratios are like-for-like). All 74 tests pass
+(`./test.sh`); ASan+UBSan clean (manual build, `detect_leaks=0` — the
+iterator arena is intentionally never freed; no teardown API exists, as
+before). Valgrind out of scope per project policy.
+
 ## [1.2.2] - 2026-09-10
 
 ### Fixed — W3 index-read efficiency regression

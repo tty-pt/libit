@@ -158,7 +158,7 @@ static void test_extreme_timestamps(void) {
 	PASS();
 	
 	printf("Query interval with extreme timestamp:");
-	it_cur_t cur = it_iter(itd, huge - 2000, huge + 1000);
+	it_cur_t cur = it_iter(itd, huge - 2000, huge);  /* (was huge+1000: UB, overflows int64) */
 	time_t min, max;
 	unsigned count, who;
 	int found = 0;
@@ -345,7 +345,7 @@ static void test_time_utils_stress(void) {
 	char buf[DATE_MAX_LEN];
 	start = get_time_us();
 	for (int i = 0; i < NUM_CONVERSIONS; i++) {
-		time_t ts = 1700000000 + i * 86400;  // Different days
+		time_t ts = 1700000000LL + (time_t)i * 86400;  // Different days
 		printtime(buf, ts);
 	}
 	end = get_time_us();
