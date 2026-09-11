@@ -71,5 +71,13 @@ test_validation_extreme_timestamp_stop ✅ ✅
 test_validation_uint32_max_start ✅ ✅ 
 test_validation_uint32_max_stop ✅ ✅ 
 
+=== Category 9: rec_query joint axis registration ===
+test_rec_axis_fill_interval_matches_manual_walk ✅ ✅ ✅ ✅ ✅ 
+test_rec_axis_fill_interval_null_out ✅ 
+test_rec_axis_joint_registered ✅ ✅ ✅ ✅ ✅ 
+test_rec_axis_joint_decode_and_fill ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ 
+test_rec_axis_joint_decode_dates ✅ ✅ ✅ ✅ 
+test_rec_axis_joint_open ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ 
+
 === Test Summary ===
 Total errors: 0

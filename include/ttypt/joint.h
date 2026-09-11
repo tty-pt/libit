@@ -21,6 +21,7 @@
 
 #include <time.h>
 #include <sys/types.h>
+#include <ttypt/rec.h>
 
 /**
  * @brief Maximum length for ISO-8601 date string buffers.
@@ -253,5 +254,33 @@ time_t sscantime(char *buf);
  * @see DATE_MAX_LEN
  */
 void printtime(char buf[DATE_MAX_LEN], time_t ts);
+
+/**
+ * @brief Recall-kernel time-axis filler (see ttypt/rec.h).
+ *
+ * Every entity present at any point in [a, b) becomes one ref in `out`
+ * (rec_ref_t == the joint entity id). Refs are appended (additive) and
+ * `out` is sealed (duplicates across split segments are deduped by the
+ * seal). Compatible with rec_axis_t.fill via the "joint" axis registered
+ * by this library's constructor (ctx = the joint_init() handle, cast
+ * through a void*).
+ *
+ * @param[in] jd  Database handle from joint_init().
+ * @param[in] a   Start of the range (inclusive).
+ * @param[in] b   End of the range (exclusive).
+ * @param[out] out Recall-kernel set to fill.
+ * @return 0 on success, -1 if out is NULL.
+ */
+int rec_axis_fill_interval(unsigned jd, time_t a, time_t b, rec_set_t *out);
+
+/*
+ * rec_axis_open (PLAN-REC-QUERY.md §4.3, optional CLI-open convention,
+ * not part of libqmap's core rec_query registry API): opens a joint
+ * store from an opaque spec string and returns the ctx a caller then
+ * passes to rec_axis_set_ctx(). spec is the joint_init() filename, or
+ * empty/NULL for an in-memory store; the returned ctx is the jd handle
+ * widened to a pointer via uintptr_t (same cast joint_fill uses).
+ */
+void *rec_axis_open(const char *spec);
 
 #endif

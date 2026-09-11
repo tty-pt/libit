@@ -14,6 +14,7 @@
 #include <ttypt/qmap.h>
 #include <ttypt/idm.h>
 #include <ttypt/qsys.h>
+#include <ttypt/rec.h>
 
 #ifdef _WIN32
 static char *strptime(const char *s, const char *fmt, struct tm *tm) {
@@ -882,4 +883,120 @@ void joint_close(unsigned jd) {
 	qmap_close(tidbs->id);
 	
 	idm_del(&idm, jd);
+}
+
+/* ---- rec_query axis registration (time) ---- */
+
+/*
+ * Recall-kernel adapter (see rec.h): every entity present at any point in
+ * [a, b) becomes one ref in `out`. `who` (unsigned) is used directly as
+ * rec_ref_t; duplicates across split segments are fine, rec_set_seal
+ * dedups. 0 ok / -1 on NULL out.
+ */
+int rec_axis_fill_interval(unsigned jd, time_t a, time_t b, rec_set_t *out)
+{
+	joint_cur_t c;
+	time_t min, max;
+	unsigned count, who;
+
+	if (!out)
+		return -1;
+	c = joint_iter(jd, a, b);
+	while (joint_next(&min, &max, &count, &who, &c))
+		rec_set_push(out, (rec_ref_t)who);
+	rec_set_seal(out);
+	return 0;
+}
+
+struct rec_joint_params {
+	time_t a;
+	time_t b;
+};
+
+static int joint_fill(void *ctx, void *params, rec_set_t *out)
+{
+	unsigned jd = (unsigned)(uintptr_t)ctx;
+	const struct rec_joint_params *p = params;
+
+	if (!p)
+		return -1;
+	return rec_axis_fill_interval(jd, p->a, p->b, out);
+}
+
+/*
+ * Decode "a=2024-01-01 b=2024-06-01T12:00:00" into a heap-owned
+ * rec_joint_params (freed never — one-shot CLI process lifetime, matches
+ * the other axis decode fns). Each value is parsed with sscantime, so any
+ * of its accepted formats (date, date+time, unix timestamp) works. Missing
+ * a/b default to 0. Key=value style (rather than a single "a:b" string) is
+ * used to avoid ambiguity with the colons inside ISO-8601 time-of-day
+ * values that sscantime itself accepts.
+ */
+static void *joint_decode(const char *s)
+{
+	struct rec_joint_params *p;
+	char *buf, *cur;
+
+	if (!s)
+		return NULL;
+	p = calloc(1, sizeof(*p));
+	buf = malloc(strlen(s) + 1);
+	if (!p || !buf) {
+		free(p);
+		free(buf);
+		return NULL;
+	}
+	strcpy(buf, s);
+	cur = buf;
+	while (*cur) {
+		char *key, *val;
+
+		while (*cur == ' ')
+			cur++;
+		if (!*cur)
+			break;
+		key = cur;
+		while (*cur && *cur != '=' && *cur != ' ')
+			cur++;
+		if (*cur != '=') {
+			if (*cur)
+				cur++;
+			continue;
+		}
+		*cur++ = '\0';
+		val = cur;
+		while (*cur && *cur != ' ')
+			cur++;
+		if (*cur)
+			*cur++ = '\0';
+		if (!strcmp(key, "a"))
+			p->a = sscantime(val);
+		else if (!strcmp(key, "b"))
+			p->b = sscantime(val);
+	}
+	return p;
+}
+
+__attribute__((constructor)) static void joint_rec_axis_init(void)
+{
+	static const rec_axis_t joint_axis = {
+		"joint", joint_fill, NULL, NULL, joint_decode
+	};
+
+	rec_axis_register(&joint_axis);
+}
+
+/*
+ * rec_axis_open convention (PLAN-REC-QUERY.md §4.3): spec is the
+ * `joint_init` filename, or empty/NULL for an in-memory store. Returns
+ * the jd (a small unsigned handle, like `rec_axis_fill_interval`'s ctx)
+ * widened to a pointer via uintptr_t, same cast the constructor's own
+ * `joint_fill`/tests already use for `rec_axis_set_ctx`.
+ */
+void *rec_axis_open(const char *spec)
+{
+	unsigned jd;
+
+	jd = joint_init(spec && *spec ? (char *)spec : NULL);
+	return (void *)(uintptr_t)jd;
 }

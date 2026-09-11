@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #include <ttypt/qsys.h>
+#include <ttypt/rec.h>
 
 char *good = "✅";
 char *bad = "❌";
@@ -1061,8 +1062,191 @@ TEST(validation_uint32_max_stop) {
 }
 
 /* ============================================
- * Main test runner
+ * Category 9: rec_query "joint" axis registration
  * ============================================ */
+
+static int rec_ref_present(const rec_set_t *s, rec_ref_t r)
+{
+	const rec_ref_t *a = rec_set_at(s);
+	size_t n = rec_set_count(s);
+	size_t i;
+
+	for (i = 0; i < n; i++)
+		if (a[i] == r)
+			return 1;
+	return 0;
+}
+
+TEST(rec_axis_fill_interval_matches_manual_walk) {
+	unsigned jd = joint_init(NULL);
+	rec_set_t *manual = rec_set_new();
+	rec_set_t *viafn;
+	joint_cur_t cur;
+	time_t min, max;
+	unsigned count, who;
+
+	joint_start(jd, 1000, 1);
+	joint_stop(jd, 2000, 1);
+	joint_start(jd, 1500, 2);
+	joint_stop(jd, 2500, 2);
+	joint_start(jd, 5000, 3);
+	joint_stop(jd, 6000, 3);
+
+	cur = joint_iter(jd, 900, 3000);
+	while (joint_next(&min, &max, &count, &who, &cur))
+		rec_set_push(manual, (rec_ref_t)who);
+	rec_set_seal(manual);
+
+	viafn = rec_set_new();
+	ASSERT(rec_axis_fill_interval(jd, 900, 3000, viafn) == 0);
+
+	ASSERT_EQ(rec_set_count(manual), rec_set_count(viafn));
+	ASSERT(rec_ref_present(viafn, 1));
+	ASSERT(rec_ref_present(viafn, 2));
+	ASSERT(!rec_ref_present(viafn, 3));
+
+	rec_set_free(manual);
+	rec_set_free(viafn);
+}
+
+TEST(rec_axis_fill_interval_null_out) {
+	unsigned jd = joint_init(NULL);
+
+	ASSERT(rec_axis_fill_interval(jd, 0, 1000, NULL) == -1);
+}
+
+TEST(rec_axis_joint_registered)
+{
+	int slot = -1;
+	int i;
+	const rec_axis_t *axis;
+
+	for (i = 0; i < rec_axis_count(); i++) {
+		axis = rec_axis_get(i);
+		if (axis && !strcmp(axis->name, "joint")) {
+			slot = i;
+			break;
+		}
+	}
+	ASSERT(slot >= 0);
+	axis = rec_axis_get(slot);
+	ASSERT(axis != NULL);
+	ASSERT(axis->fill != NULL);
+	ASSERT(axis->rank == NULL);
+	ASSERT(axis->decode != NULL);
+}
+
+TEST(rec_axis_joint_decode_and_fill)
+{
+	int slot = -1;
+	int i;
+	const rec_axis_t *axis;
+	unsigned jd = joint_init(NULL);
+	void *params;
+	rec_set_t *direct;
+	rec_set_t *via;
+
+	for (i = 0; i < rec_axis_count(); i++) {
+		axis = rec_axis_get(i);
+		if (axis && !strcmp(axis->name, "joint")) {
+			slot = i;
+			break;
+		}
+	}
+	ASSERT(slot >= 0);
+	ASSERT(rec_axis_set_ctx(slot, (void *)(uintptr_t)jd) == 0);
+	axis = rec_axis_get(slot);
+	ASSERT(axis->ctx == (void *)(uintptr_t)jd);
+
+	joint_start(jd, 1000000000, 7); /* 2001-09-09T01:46:40Z-ish, unix ts */
+	joint_stop(jd, 1000003600, 7);
+
+	params = rec_axis_decode(slot, "a=1000000000 b=1000003600");
+	ASSERT(params != NULL);
+
+	direct = rec_set_new();
+	ASSERT(rec_axis_fill_interval(jd, 1000000000, 1000003600, direct) == 0);
+
+	via = rec_set_new();
+	ASSERT(axis->fill(axis->ctx, params, via) == 0);
+
+	ASSERT_EQ(rec_set_count(direct), rec_set_count(via));
+	ASSERT(rec_ref_present(via, 7));
+
+	rec_set_free(direct);
+	rec_set_free(via);
+}
+
+TEST(rec_axis_joint_decode_dates)
+{
+	int slot = -1;
+	int i;
+	const rec_axis_t *axis;
+	struct { time_t a; time_t b; } *p;
+	void *params;
+
+	for (i = 0; i < rec_axis_count(); i++) {
+		axis = rec_axis_get(i);
+		if (axis && !strcmp(axis->name, "joint")) {
+			slot = i;
+			break;
+		}
+	}
+	ASSERT(slot >= 0);
+	params = rec_axis_decode(slot, "a=2024-01-01 b=2024-06-01");
+	ASSERT(params != NULL);
+	p = params;
+	ASSERT(p->a > 0);
+	ASSERT(p->b > p->a);
+}
+
+TEST(rec_axis_joint_open)
+{
+	int slot = -1;
+	int i;
+	const rec_axis_t *axis;
+	void *ctx;
+	unsigned jd;
+	void *params;
+	rec_set_t *direct;
+	rec_set_t *via;
+
+	for (i = 0; i < rec_axis_count(); i++) {
+		axis = rec_axis_get(i);
+		if (axis && !strcmp(axis->name, "joint")) {
+			slot = i;
+			break;
+		}
+	}
+	ASSERT(slot >= 0);
+
+	ctx = rec_axis_open(""); /* empty spec -> in-memory store */
+	ASSERT(ctx != NULL || (uintptr_t)ctx == 0); /* jd 0 is a valid handle */
+	jd = (unsigned)(uintptr_t)ctx;
+	ASSERT(rec_axis_set_ctx(slot, ctx) == 0);
+	axis = rec_axis_get(slot);
+	ASSERT(axis->ctx == ctx);
+
+	joint_start(jd, 2000000000, 42);
+	joint_stop(jd, 2000003600, 42);
+
+	params = rec_axis_decode(slot, "a=2000000000 b=2000003600");
+	ASSERT(params != NULL);
+
+	direct = rec_set_new();
+	ASSERT(rec_axis_fill_interval(jd, 2000000000, 2000003600, direct) == 0);
+
+	via = rec_set_new();
+	ASSERT(axis->fill(axis->ctx, params, via) == 0);
+
+	ASSERT_EQ(rec_set_count(direct), rec_set_count(via));
+	ASSERT(rec_ref_present(via, 42));
+
+	rec_set_free(direct);
+	rec_set_free(via);
+}
+
+
 
 int main(void) {
 	printf("Running libjoint tests...\n\n");
@@ -1145,6 +1329,15 @@ int main(void) {
 	RUN_TEST(validation_extreme_timestamp_stop);
 	RUN_TEST(validation_uint32_max_start);
 	RUN_TEST(validation_uint32_max_stop);
+	
+	/* Category 9: rec_query joint axis registration */
+	printf("\n=== Category 9: rec_query joint axis registration ===\n");
+	RUN_TEST(rec_axis_fill_interval_matches_manual_walk);
+	RUN_TEST(rec_axis_fill_interval_null_out);
+	RUN_TEST(rec_axis_joint_registered);
+	RUN_TEST(rec_axis_joint_decode_and_fill);
+	RUN_TEST(rec_axis_joint_decode_dates);
+	RUN_TEST(rec_axis_joint_open);
 	
 	printf("\n=== Test Summary ===\n");
 	printf("Total errors: %u\n", errors);
