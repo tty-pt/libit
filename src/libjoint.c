@@ -2,7 +2,7 @@
 #ifndef __OpenBSD__
 #define _XOPEN_SOURCE
 #endif
-#include "../include/ttypt/it.h"
+#include "../include/ttypt/joint.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -45,8 +45,8 @@ static char *strptime(const char *s, const char *fmt, struct tm *tm) {
 #define TI_MASK 0xFFFF
 
 enum cflags {
-	IT_AHEAD = 1, // first element
-	IT_HD = 2, // iterating inside split
+	JOINT_AHEAD = 1, // first element
+	JOINT_HD = 2, // iterating inside split
 };
 
 struct ti {
@@ -374,7 +374,7 @@ assoc_id_cb(const void **skey,
 
 __attribute__((constructor))
 static void
-libit_init(void)
+libjoint_init(void)
 {
 	qm_ti = qmap_reg(sizeof(struct ti));
 	qm_time = qmap_reg(sizeof(time_t));
@@ -746,9 +746,9 @@ splits_fill(struct tidbs *tidbs, struct split_tailq *splits, time_t min, time_t 
  ******/
 
 static inline int UNUSED
-it_exists(uint32_t itd, time_t ts, uint32_t id UNUSED)
+joint_exists(uint32_t jd, time_t ts, uint32_t id UNUSED)
 {
-	struct tidbs *tidbs = &ti_dbs[itd];
+	struct tidbs *tidbs = &ti_dbs[jd];
 	struct ti tmp;
 	int ret = 0;
 	uint32_t c = qmap_iter(tidbs->ti, NULL, 0);  // Iterate through ALL intervals
@@ -767,9 +767,9 @@ it_exists(uint32_t itd, time_t ts, uint32_t id UNUSED)
 }
 
 int
-it_stop(uint32_t itd, time_t ts, uint32_t id)
+joint_stop(uint32_t jd, time_t ts, uint32_t id)
 {
-	struct tidbs *tidbs = &ti_dbs[itd];
+	struct tidbs *tidbs = &ti_dbs[jd];
 
 	/* Validate timestamp range to avoid conflicts with sentinels */
 	if (ts < TS_MIN / 2 || ts > TS_MAX / 2) {
@@ -793,9 +793,9 @@ it_stop(uint32_t itd, time_t ts, uint32_t id)
 }
 
 int
-it_start(uint32_t itd, time_t ts, uint32_t id)
+joint_start(uint32_t jd, time_t ts, uint32_t id)
 {
-	struct tidbs *tidbs = &ti_dbs[itd];
+	struct tidbs *tidbs = &ti_dbs[jd];
 
 	/* Validate timestamp range to avoid conflicts with sentinels */
 	if (ts < TS_MIN / 2 || ts > TS_MAX / 2) {
@@ -816,27 +816,27 @@ it_start(uint32_t itd, time_t ts, uint32_t id)
 	return 0;
 }
 
-struct it_internal {
-	uint32_t itd;
+struct joint_internal {
+	uint32_t jd;
 	struct split_tailq splits;
 	struct split *next;
 	struct split_arena arena;
 };
 
-it_cur_t it_iter(uint32_t itd, time_t start, time_t end)
+joint_cur_t joint_iter(uint32_t jd, time_t start, time_t end)
 {
-	struct it_internal *internal = malloc(sizeof(struct it_internal));
-	struct tidbs *tidbs = &ti_dbs[itd];
+	struct joint_internal *internal = malloc(sizeof(struct joint_internal));
+	struct tidbs *tidbs = &ti_dbs[jd];
 	memset(&internal->arena, 0, sizeof(internal->arena));
 	splits_get(&internal->splits, tidbs, start, end, &internal->arena);
 	splits_fill(tidbs, &internal->splits, start, end, &internal->arena);
 	internal->next = TAILQ_FIRST(&internal->splits);
-	internal->itd = itd;
+	internal->jd = jd;
 	return internal;
 }
 
-int it_next(time_t *min, time_t *max, uint32_t *count, uint32_t *who, it_cur_t *c) {
-	struct it_internal *internal = *c;
+int joint_next(time_t *min, time_t *max, uint32_t *count, uint32_t *who, joint_cur_t *c) {
+	struct joint_internal *internal = *c;
 
 	while (internal->next) {
 		struct split *s = internal->next;
@@ -853,7 +853,7 @@ int it_next(time_t *min, time_t *max, uint32_t *count, uint32_t *who, it_cur_t *
 	return 0;
 }
 
-uint32_t it_init(char *fname) {
+uint32_t joint_init(char *fname) {
 	struct tidbs *tidbs;
 	uint32_t id;
 
@@ -870,8 +870,8 @@ uint32_t it_init(char *fname) {
 	return id;
 }
 
-void it_close(unsigned itd) {
-	struct tidbs *tidbs = &ti_dbs[itd];
+void joint_close(unsigned jd) {
+	struct tidbs *tidbs = &ti_dbs[jd];
 	
 	/* Persist data to disk BEFORE closing (only saves file-backed maps) */
 	qmap_save();
@@ -881,5 +881,5 @@ void it_close(unsigned itd) {
 	qmap_close(tidbs->max);
 	qmap_close(tidbs->id);
 	
-	idm_del(&idm, itd);
+	idm_del(&idm, jd);
 }

@@ -1,8 +1,8 @@
-all := libit test test_extended
+all := libjoint test test_extended
 
-LDLIBS-libit := -lqmap -lqsys
-LDLIBS-test := -lqmap -lqsys -lit
-LDLIBS-test_extended := -lqmap -lqsys -lit
+LDLIBS-libjoint := -lqmap -lqsys
+LDLIBS-test := -lqmap -lqsys -ljoint
+LDLIBS-test_extended := -lqmap -lqsys -ljoint
 
 CFLAGS += -g
 CFLAGS += -O3 -mpopcnt -mavx2 -mfma

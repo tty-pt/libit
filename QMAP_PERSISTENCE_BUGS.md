@@ -4,7 +4,7 @@
 February 23, 2026
 
 ## Context
-While implementing Phase 3 of libit v1.1.0 testing (persistence tests), we discovered critical bugs in qmap v0.6.0's file persistence functionality.
+While implementing Phase 3 of libjoint v1.1.0 testing (persistence tests), we discovered critical bugs in qmap v0.6.0's file persistence functionality.
 
 ## Bugs Discovered
 
@@ -79,10 +79,10 @@ qmap_save();
 
 ---
 
-## Impact on libit
+## Impact on libjoint
 
 ### Original Design
-libit v1.1.0 was designed to use 3 qmap databases per interval tree:
+libjoint v1.1.0 was designed to use 3 qmap databases per interval tree:
 - `ti`: Primary database (interval -> interval)
 - `max`: Secondary index sorted by max timestamp
 - `id`: Secondary index sorted by entity ID
@@ -98,25 +98,25 @@ Changed to use separate files:
 **Result**: Still crashes due to Bug #2.
 
 ### Current Solution
-**Persistence disabled** in libit v1.1.0:
-1. Added `it_close()` function (for future use)
+**Persistence disabled** in libjoint v1.1.0:
+1. Added `joint_close()` function (for future use)
 2. Implemented persistence test infrastructure (Category 7 tests)
 3. **Disabled** Category 7 tests with note: "SKIPPED: Persistence tests disabled due to qmap bug"
 4. File persistence marked as **NOT WORKING** until qmap bugs are fixed
 
 ---
 
-## Files Modified (libit)
+## Files Modified (libjoint)
 
 ### Core Changes
--  `/home/quirinpa/libit/src/libit.c`:
-  - Added `it_close()` function (lines 619-630)
+-  `/home/quirinpa/libit/src/libjoint.c`:
+  - Added `joint_close()` function (lines 619-630)
   - Fixed `sscantime()` errno bug (line 87)
   - Fixed `printtime()` missing return statements (lines 106, 111)
   - Modified `tidbs_init()` to use QM_MIRROR flag (line 165)
 
-- `/home/quirinpa/libit/include/ttypt/it.h`:
-  - Added `it_close()` documentation (lines 88-102)
+- `/home/quirinpa/libit/include/ttypt/joint.h`:
+  - Added `joint_close()` documentation (lines 88-102)
 
 ### Test Infrastructure
 - `/home/quirinpa/libit/src/test.c`:
@@ -133,13 +133,13 @@ Changed to use separate files:
 2. **Fix Bug #2**: Investigate memory management in qmap destructor when QM_MIRROR is used with custom types
 3. **Add Tests**: qmap's `test_extended.c` only tests built-in types (QM_U32, QM_STR); add tests with custom registered types
 
-### For libit
+### For libjoint
 1. **Short-term**: Keep persistence disabled until qmap bugs are fixed
 2. **Medium-term**: Consider alternative approaches:
    - Use built-in types only (requires redesigning data structures)
    - Implement custom persistence layer (bypassing qmap's)
    - Switch to different storage backend (e.g., SQLite, LMDB)
-3. **Long-term**: Contribute fixes to qmap or fork for libit-specific needs
+3. **Long-term**: Contribute fixes to qmap or fork for libjoint-specific needs
 
 ---
 
@@ -151,7 +151,7 @@ All test programs are in `/tmp/`:
 - `multi_db_test.c` - Multi DB, custom types: ❌ FAILS (Bug #1)
 - `multi_db_test2.c` - Multi DB, built-in types: ❌ FAILS (Bug #1)
 - `single_db_test.c` - Single DB per file, built-in types: ✅ WORKS
-- `debug_persist*.c` - libit persistence tests: ❌ FAIL (both bugs)
+- `debug_persist*.c` - libjoint persistence tests: ❌ FAIL (both bugs)
 - `append_test.c` - Demonstrates data corruption on reopen
 
 ---
@@ -162,7 +162,7 @@ qmap v0.6.0 has fundamental issues with:
 1. Multiple databases per file when using QM_MIRROR
 2. Custom types with QM_MIRROR causing memory corruption
 
-These bugs block file persistence in libit until resolved. Phase 3 partially completed:
+These bugs block file persistence in libjoint until resolved. Phase 3 partially completed:
 - ✅ Category 6 (Time Utilities): 6 tests passing
 - ⏸️ Category 7 (Persistence): 5 tests implemented but disabled
 
@@ -173,7 +173,7 @@ These bugs block file persistence in libit until resolved. Phase 3 partially com
 ## Update: February 23, 2026 - Re-tested with qmap b1bc322
 
 ### Background
-During libit v1.2.0 development, we discovered that qmap had a potentially relevant fix:
+During libjoint v1.2.0 development, we discovered that qmap had a potentially relevant fix:
 - **Commit df5a7ac**: "Fix two major design gotchas: file loading and pointer invalidation"
 - This commit claimed to remove QM_MIRROR requirement for file loading
 - Current qmap version: **b1bc322** (includes df5a7ac merged into main)
@@ -199,7 +199,7 @@ The qmap persistence bugs **persist as of version b1bc322** (2026-02-23).
 Despite the df5a7ac fix claiming to address file loading issues, the segmentation fault indicates:
 1. The bugs are still present, OR
 2. The fix introduced new issues, OR  
-3. libit's usage pattern exposes a different bug
+3. libjoint's usage pattern exposes a different bug
 
 **Action Taken**: Category 7 persistence tests remain disabled with updated comment:
 ```c
@@ -211,12 +211,12 @@ Despite the df5a7ac fix claiming to address file loading issues, the segmentatio
 
 **Recommendation**: Continue monitoring qmap development. May need to:
 - File detailed bug report with qmap maintainers
-- Investigate if QM_MIRROR removal (per df5a7ac) requires code changes in libit
+- Investigate if QM_MIRROR removal (per df5a7ac) requires code changes in libjoint
 - Consider alternative persistence strategies if qmap issues persist
 
 ---
 
-## UPDATE: February 23, 2026 (libit v1.2.1)
+## UPDATE: February 23, 2026 (libjoint v1.2.1)
 
 ### Resolution: PERSISTENCE NOW WORKS ✅
 
@@ -228,8 +228,8 @@ qmap v0.7.0+ (specifically commit df5a7ac) made a fundamental change:
 - **After**: QM_MIRROR is **optional**; file persistence works without it
 - QM_MIRROR is now only needed for bidirectional lookups
 
-### libit Fix Applied
-Changed `src/libit.c:166`:
+### libjoint Fix Applied
+Changed `src/libjoint.c:166`:
 ```c
 // OLD (v1.2.0):
 uint32_t flags = fname ? QM_MIRROR : 0;
@@ -250,9 +250,9 @@ test_persist_large_dataset ✅
 ```
 
 ### Why This Works
-- libit doesn't use `qmap_assoc()` (bidirectional lookups)
-- libit only needs basic file persistence, not QM_MIRROR features
+- libjoint doesn't use `qmap_assoc()` (bidirectional lookups)
+- libjoint only needs basic file persistence, not QM_MIRROR features
 - qmap v0.7.0+ automatically loads persisted data without QM_MIRROR flag
 
 ### Conclusion
-The qmap bugs documented above are **specific to QM_MIRROR usage** and do not affect libit since libit doesn't need QM_MIRROR. By removing the QM_MIRROR flag, file persistence now works perfectly.
+The qmap bugs documented above are **specific to QM_MIRROR usage** and do not affect libjoint since libjoint doesn't need QM_MIRROR. By removing the QM_MIRROR flag, file persistence now works perfectly.

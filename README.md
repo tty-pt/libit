@@ -1,10 +1,10 @@
-# libit - Interval Tree Library
+# libjoint - Interval Tree Library
 
 A high-performance C library for storing and querying time-based intervals. Built on top of [qmap](https://github.com/tty-pt/qmap) for efficient sorted storage and iteration.
 
-## What is libit?
+## What is libjoint?
 
-libit allows you to:
+libjoint allows you to:
 
 - **Store intervals**: Record start/stop times for any entity (users, processes, events)
 - **Query overlaps**: Find all intervals that intersect a given time range
@@ -23,21 +23,21 @@ libit allows you to:
 ## Quick Example
 
 ```c
-#include <ttypt/it.h>
+#include <ttypt/joint.h>
 
 // Create database (NULL = memory only, "data.qmap" = persisted)
-unsigned itd = it_init(NULL);
+unsigned jd = joint_init(NULL);
 
 // Record that entity 1 was active from time 1000 to 2000
-it_start(itd, 1000, 1);
-it_stop(itd, 2000, 1);
+joint_start(jd, 1000, 1);
+joint_stop(jd, 2000, 1);
 
 // Query: which entities were active between 1200 and 1800?
-it_cur_t cur = it_iter(itd, 1200, 1800);
+joint_cur_t cur = joint_iter(jd, 1200, 1800);
 time_t min, max;
 unsigned count, who;
 
-while (it_next(&min, &max, &count, &who, &cur)) {
+while (joint_next(&min, &max, &count, &who, &cur)) {
     printf("Entity %u active [%ld, %ld)\n", who, min, max);
 }
 ```
@@ -71,37 +71,37 @@ These are automatically built and linked when you run `make`.
 |----------|-------------|
 | [QUICK_REFERENCE.md](./QUICK_REFERENCE.md) | API overview with code examples |
 | [CHANGELOG.md](./CHANGELOG.md) | Version history and changes |
-| [LIBIT_LIMITATIONS.md](./LIBIT_LIMITATIONS.md) | Known limitations and workarounds |
+| [JOINT_LIMITATIONS.md](./JOINT_LIMITATIONS.md) | Known limitations and workarounds |
 | [TESTING_SUMMARY.md](./TESTING_SUMMARY.md) | Test coverage and results |
 
 ## Recall Kernel Adapter (roadmap — W4)
 
-libit is a time axis for the recall kernel (`rec.h` in libqmap; spec in
+libjoint is a time axis for the recall kernel (`rec.h` in libqmap; spec in
 libqmap's `docs/RECALL-KERNEL.md`). The planned adapter — **not yet
 implemented** — follows the contract (one filler, streams matches, seals,
 plain `int` return, additive):
 
 ```c
 /* Proposed (W4), not implemented. */
-int rec_axis_fill_interval(unsigned itd, time_t a, time_t b, rec_set_t *out);
+int rec_axis_fill_interval(unsigned jd, time_t a, time_t b, rec_set_t *out);
 ```
 
 Exact `[a,b)` interval membership, entity id widened to `rec_ref_t`. Until
-it lands, compose libit with the existing `it_iter`/`it_next` cursor and
+it lands, compose libjoint with the existing `joint_iter`/`joint_next` cursor and
 push into a `rec_set_t` yourself.
 
 ## API Overview
 
 | Function | Description |
 |----------|-------------|
-| `it_init(fname)` | Create/open database (NULL = memory only) |
-| `it_start(itd, time, id)` | Record interval start for entity |
-| `it_stop(itd, time, id)` | Record interval stop for entity |
-| `it_iter(itd, min, max)` | Create query iterator |
-| `it_next(...)` | Get next result from iterator |
-| `it_split(itd, min, max)` | Split overlapping intervals |
+| `joint_init(fname)` | Create/open database (NULL = memory only) |
+| `joint_start(jd, time, id)` | Record interval start for entity |
+| `joint_stop(jd, time, id)` | Record interval stop for entity |
+| `joint_iter(jd, min, max)` | Create query iterator |
+| `joint_next(...)` | Get next result from iterator |
+| `joint_split(jd, min, max)` | Split overlapping intervals |
 
-See [include/ttypt/it.h](./include/ttypt/it.h) for complete API documentation.
+See [include/ttypt/joint.h](./include/ttypt/joint.h) for complete API documentation.
 
 ## Performance
 

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to libit will be documented in this file.
+All notable changes to libjoint will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed — sweep-line performance tiers (query path ~2–48× faster)
 
 Public API unchanged. All work is in the query/split path
-(`it_iter` → `it_next`); write path (`it_start`/`it_stop`) untouched.
+(`joint_iter` → `joint_next`); write path (`joint_start`/`joint_stop`) untouched.
 
 - **T0**: `CFLAGS += -O3 -mpopcnt -mavx2 -mfma` (the library previously
   built at `-O0`); new `make bench` target runs `bin/test_extended`
@@ -76,7 +76,7 @@ before). Valgrind out of scope per project policy.
   libqmap ≥ 0.8.0 (chains) / ≥ 0.8.0-backshift (no-holes) required;
   compat floors otherwise unchanged (≥ `1a4bfa2` auto-grow,
   ≥ `b1bc322` assoc-multivalue).
-- No public `it_*` behavior changed; `ti_intersect` GE scans on `max`
+- No public `joint_*` behavior changed; `ti_intersect` GE scans on `max`
   unchanged.
 
 ### Performance (vs pre-W3 baseline, new libqmap)
@@ -100,10 +100,10 @@ before). Valgrind out of scope per project policy.
 ### Fixed - File Persistence
 
 **File Persistence Now Works** ✅
-- Removed QM_MIRROR flag from `it_init()` (src/libit.c:166)
+- Removed QM_MIRROR flag from `joint_init()` (src/libjoint.c:166)
 - **Root cause:** qmap v0.7.0+ no longer requires QM_MIRROR for file persistence
 - **Solution:** Changed flags from `QM_MIRROR` to `0`
-- **Why it works:** libit doesn't need bidirectional lookups (qmap_assoc), so QM_MIRROR was unnecessary
+- **Why it works:** libjoint doesn't need bidirectional lookups (qmap_assoc), so QM_MIRROR was unnecessary
 
 **Test Results:**
 - All 5 Category 7 persistence tests now passing:
@@ -116,7 +116,7 @@ before). Valgrind out of scope per project policy.
 **Total Test Count:** 74 tests (59 core + 15 extended)
 
 ### Documentation Updated
-- LIBIT_LIMITATIONS.md: Added section 5 for persistence fix
+- JOINT_LIMITATIONS.md: Added section 5 for persistence fix
 - QMAP_PERSISTENCE_BUGS.md: Marked as resolved
 
 ---
@@ -126,21 +126,21 @@ before). Valgrind out of scope per project policy.
 ### Fixed - Design Limitations Addressed
 
 **TI_MASK Limit (Fixed)**
-- Increased from `0x7FF` to `0xFFFF` (src/libit.c:28)
+- Increased from `0x7FF` to `0xFFFF` (src/libjoint.c:28)
 - **Old limit:** ~2,048 intervals per database
 - **New limit:** 65,536 intervals per database  
 - **Increase:** 32x capacity
 - Test coverage: 10k, 15k, and 20k interval tests passing
 
 **SPLITS_WHO_MASK Limit (Fixed)**
-- Increased from `0xFF` to `0xFFF` (src/libit.c:27)
+- Increased from `0xFF` to `0xFFF` (src/libjoint.c:27)
 - **Old limit:** 256 entities per split interval
 - **New limit:** 4,096 entities per split interval
 - **Increase:** 16x capacity
 - Test coverage: 1k and 3k overlapping entity tests passing
 
 **Extreme Timestamps (Fixed)**
-- Added input validation to `it_start()` and `it_stop()`
+- Added input validation to `joint_start()` and `joint_stop()`
 - **Valid range:** `[LONG_MIN/2, LONG_MAX/2]`
 - **Behavior:** Returns -1 with `errno = ERANGE` for out-of-range timestamps
 - **Rationale:** Prevents conflicts with internal sentinel values (mtinf, tinf)
@@ -155,7 +155,7 @@ before). Valgrind out of scope per project policy.
 
 ### Changed - API Behavior
 
-**it_start() and it_stop() Return Values**
+**joint_start() and joint_stop() Return Values**
 - **Previous:** 0=success, 1=duplicate/no-interval
 - **New:** 0=success, 1=duplicate/no-interval, -1=validation error
 - **Error reporting:** Check `errno` when return value is -1
@@ -165,10 +165,10 @@ before). Valgrind out of scope per project policy.
 ### Added
 
 **Category 8: Input Validation Tests** (4 new tests)
-- test_validation_extreme_timestamp_start: Validates timestamp range in it_start()
-- test_validation_extreme_timestamp_stop: Validates timestamp range in it_stop()
-- test_validation_uint32_max_start: Validates entity ID in it_start()
-- test_validation_uint32_max_stop: Validates entity ID in it_stop()
+- test_validation_extreme_timestamp_start: Validates timestamp range in joint_start()
+- test_validation_extreme_timestamp_stop: Validates timestamp range in joint_stop()
+- test_validation_uint32_max_start: Validates entity ID in joint_start()
+- test_validation_uint32_max_stop: Validates entity ID in joint_stop()
 
 **Extended Test Suite Enhancements** (3 new boundary tests)
 - Test 13: 15,000 intervals (approaching 65k limit)
@@ -183,10 +183,10 @@ before). Valgrind out of scope per project policy.
 
 ### Updated Documentation
 
-- **LIBIT_LIMITATIONS.md**: Marked 4 limitations as FIXED, reorganized by status
+- **JOINT_LIMITATIONS.md**: Marked 4 limitations as FIXED, reorganized by status
 - **QUICK_REFERENCE.md**: Updated limits table and error handling examples
 - **TESTING_SUMMARY.md**: Added v1.2.0 fixes section
-- **it.h**: Updated API documentation for it_start() and it_stop() with new return codes
+- **joint.h**: Updated API documentation for joint_start() and joint_stop() with new return codes
 
 ### Known Issues
 
@@ -221,16 +221,16 @@ Performance remains excellent with increased limits:
 - Align project structure with qmap v0.6.0 patterns
 - Update .gitignore with build artifact and test file patterns (/bin, /*.db, /*.qmap, /man)
 - Add Doxygen support for automatic man page generation
-- Enhance API documentation in it.h with comprehensive Doxygen comments
-- Update dependencies in it.pc (libqmap, libqsys instead of libqdb, libdb)
+- Enhance API documentation in joint.h with comprehensive Doxygen comments
+- Update dependencies in joint.pc (libqmap, libqsys instead of libqdb, libdb)
 - Establish CHANGELOG for version tracking
 
 ### Fixed
 - Fixed missing qmap_fin() calls in ti_intersect() and split_create() causing memory leaks (Phase 2)
 - Fixed integer underflow bug in splits_create() when matches_l=0 causing infinite loop and corruption (Phase 2)
 - Added proper empty result handling in splits_get() for query ranges with no matches (Phase 2)
-- Fixed errno not being reset in sscantime() before strtoull() call, causing false positives (Phase 3 - src/libit.c:87)
-- Fixed printtime() missing return statements after setting "-inf"/"inf", preventing crashes on extreme timestamps (Phase 3 - src/libit.c:106, 111)
+- Fixed errno not being reset in sscantime() before strtoull() call, causing false positives (Phase 3 - src/libjoint.c:87)
+- Fixed printtime() missing return statements after setting "-inf"/"inf", preventing crashes on extreme timestamps (Phase 3 - src/libjoint.c:106, 111)
 
 ### Added
 - Comprehensive test suite (Phases 1, 2, 3 & 4):
@@ -258,7 +258,7 @@ Performance remains excellent with increased limits:
 - test_extended binary with performance metrics (microsecond timing, throughput reporting)
 - Integration test script (test.sh) with regression testing via expects.txt
 - Test output formatting with ✅/❌ indicators for easy visual verification
-- Added it_close() function for future persistence support (currently no-op for in-memory databases)
+- Added joint_close() function for future persistence support (currently no-op for in-memory databases)
 
 ### Notes
 - Code is fully compatible with qmap v0.6.0 (updated in v1.0.0)

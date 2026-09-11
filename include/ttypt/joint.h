@@ -1,9 +1,9 @@
-#ifndef IT_H
-#define IT_H
+#ifndef JOINT_H
+#define JOINT_H
 
 /**
- * @file it.h
- * @brief Public API for the Interval Tree Library (libit).
+ * @file joint.h
+ * @brief Public API for the Interval Tree Library (libjoint).
  *
  * Provides an efficient interval tree implementation for tracking
  * time-based intervals with persistence support. Built on libqmap
@@ -32,14 +32,14 @@
 /**
  * @brief Opaque iterator handle for interval tree traversal.
  *
- * Created by it_iter() and used with it_next() to traverse
+ * Created by joint_iter() and used with joint_next() to traverse
  * intervals that intersect a time range. Must not be freed
  * directly by the user.
  *
- * @see it_iter
- * @see it_next
+ * @see joint_iter
+ * @see joint_next
  */
-typedef void * it_cur_t;
+typedef void * joint_cur_t;
 
 /**
  * @brief Initialize an interval tree database.
@@ -53,36 +53,36 @@ typedef void * it_cur_t;
  * @param[in] fname Path to database file, or NULL for in-memory only.
  *                  If provided, data persists across program runs.
  *
- * @return Database handle for use with other it_* functions.
+ * @return Database handle for use with other joint_* functions.
  *         Handle is an integer ID that remains valid until
  *         process exit (no explicit close needed).
  *
  * @note File persistence uses qmap's automatic save-on-exit.
  *       Multiple databases can share one file via different names.
  *
- * @see it_start
- * @see it_stop
- * @see it_iter
+ * @see joint_start
+ * @see joint_stop
+ * @see joint_iter
  *
  * Example:
  * @code
  * // Create persistent interval tree
- * uint32_t itd = it_init("events.qmap");
+ * uint32_t jd = joint_init("events.qmap");
  * 
  * // Add intervals
- * it_start(itd, timestamp1, user_id);
- * it_stop(itd, timestamp2, user_id);
+ * joint_start(jd, timestamp1, user_id);
+ * joint_stop(jd, timestamp2, user_id);
  * 
  * // Query overlapping intervals
- * it_cur_t cur = it_iter(itd, start_time, end_time);
+ * joint_cur_t cur = joint_iter(jd, start_time, end_time);
  * time_t min, max;
  * uint32_t count, who;
- * while (it_next(&min, &max, &count, &who, &cur)) {
+ * while (joint_next(&min, &max, &count, &who, &cur)) {
  *     printf("Interval: %ld-%ld, ID: %u\n", min, max, who);
  * }
  * @endcode
  */
-unsigned it_init(char *fname);
+unsigned joint_init(char *fname);
 
 /**
  * @brief Close an interval tree database and free resources.
@@ -91,23 +91,23 @@ unsigned it_init(char *fname);
  * ensuring data is persisted to disk. After calling this function,
  * the handle should not be used again.
  *
- * @param[in] itd Database handle from it_init().
+ * @param[in] jd Database handle from joint_init().
  *
  * @note This function should be called before re-opening the same
  *       database file to ensure data persistence.
  *
- * @see it_init
+ * @see joint_init
  */
-void it_close(unsigned itd);
+void joint_close(unsigned jd);
 
 /**
  * @brief Start a new interval for an entity.
  *
  * Records that an entity (identified by id) began an activity
  * at the given timestamp. The interval remains open (max = infinity)
- * until closed with it_stop().
+ * until closed with joint_stop().
  *
- * @param[in] itd Database handle from it_init().
+ * @param[in] jd Database handle from joint_init().
  * @param[in] ts  Timestamp when the interval begins.
  *               Must be in range [LONG_MIN/2, LONG_MAX/2] to avoid
  *               conflicts with internal sentinel values.
@@ -124,10 +124,10 @@ void it_close(unsigned itd);
  * @note If an entity already has an open interval, this function
  *       returns 1 and does not create a duplicate.
  *
- * @see it_stop
- * @see it_init
+ * @see joint_stop
+ * @see joint_init
  */
-int it_start(unsigned itd, time_t ts, unsigned id);
+int joint_start(unsigned jd, time_t ts, unsigned id);
 
 /**
  * @brief Stop an interval for an entity.
@@ -137,7 +137,7 @@ int it_start(unsigned itd, time_t ts, unsigned id);
  * interval exists, creates a new interval ending at this time
  * with start = -infinity.
  *
- * @param[in] itd Database handle from it_init().
+ * @param[in] jd Database handle from joint_init().
  * @param[in] ts  Timestamp when the interval ends.
  *               Must be in range [LONG_MIN/2, LONG_MAX/2] to avoid
  *               conflicts with internal sentinel values.
@@ -153,10 +153,10 @@ int it_start(unsigned itd, time_t ts, unsigned id);
  * @note This function handles the case where stop is called
  *       before start by creating an interval from -infinity.
  *
- * @see it_start
- * @see it_init
+ * @see joint_start
+ * @see joint_init
  */
-int it_stop(unsigned itd, time_t ts, unsigned id);
+int joint_stop(unsigned jd, time_t ts, unsigned id);
 
 /**
  * @brief Begin iterating over intervals that intersect a time range.
@@ -166,24 +166,24 @@ int it_stop(unsigned itd, time_t ts, unsigned id);
  * intervals that show which entities were present during each
  * sub-interval.
  *
- * @param[in] itd   Database handle from it_init().
+ * @param[in] jd   Database handle from joint_init().
  * @param[in] start Start of the query time range (inclusive).
  * @param[in] end   End of the query time range (exclusive).
  *
- * @return Opaque iterator handle for use with it_next().
+ * @return Opaque iterator handle for use with joint_next().
  *         The iterator remains valid until all results are consumed
  *         or the process exits. No explicit cleanup needed.
  *
  * @note The iterator computes split intervals that show periods
- *       where the set of present entities changes. Use it_next()
+ *       where the set of present entities changes. Use joint_next()
  *       to retrieve each split interval and its associated entities.
  *
- * @see it_next
- * @see it_init
- * @see it_start
- * @see it_stop
+ * @see joint_next
+ * @see joint_init
+ * @see joint_start
+ * @see joint_stop
  */
-it_cur_t it_iter(unsigned itd, time_t start, time_t end);
+joint_cur_t joint_iter(unsigned jd, time_t start, time_t end);
 
 /**
  * @brief Get the next interval and entity from an iterator.
@@ -196,19 +196,19 @@ it_cur_t it_iter(unsigned itd, time_t start, time_t end);
  * @param[out] max   End time of this interval segment.
  * @param[out] count Total number of entities present in this segment.
  * @param[out] who   Entity ID for this iteration.
- * @param[in,out] c  Iterator handle from it_iter().
+ * @param[in,out] c  Iterator handle from joint_iter().
  *
  * @return 1 if an entity was retrieved (continue iteration).
  *         0 if no more entities/intervals (iteration complete).
  *
- * @note To get all entities for each interval, keep calling it_next()
+ * @note To get all entities for each interval, keep calling joint_next()
  *       until count entities are retrieved for that time segment.
  *       The iterator automatically advances to the next interval
  *       when all entities are consumed.
  *
- * @see it_iter
+ * @see joint_iter
  */
-int it_next(time_t *min, time_t *max, unsigned *count, unsigned *who, it_cur_t *c);
+int joint_next(time_t *min, time_t *max, unsigned *count, unsigned *who, joint_cur_t *c);
 
 /**
  * @brief Parse an ISO-8601 date string or Unix timestamp.
